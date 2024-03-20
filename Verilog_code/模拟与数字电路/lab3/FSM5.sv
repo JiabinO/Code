@@ -1,0 +1,110 @@
+`timescale 1ns / 1ps
+/*************************************************************************************
+    Moore型电路三段式顺序码检测比特流序列10101011
+    输入：x(单个比特数字)、rstn(低电平有效状态清零)、clk(时钟信号，每次输入产生一个时钟信号)；
+    输出：y(是否存在序列，若出现序列则不计算前面重叠部分)、s(3位顺序码led显示当前状态)。
+*************************************************************************************/
+module FSM5(
+    input x,rstn,clk,
+    output reg y,
+    output reg [2:0] s
+    );
+    reg [2:0] cs;
+    reg [2:0] d;
+    reg y_ns,y_cs;
+
+    always @(posedge clk , negedge rstn)begin
+        if(!rstn) begin//接收到清零信号
+            cs<=0;
+        end
+        else begin//更新现态
+            cs<=d;
+            y_cs<=y_ns;
+        end
+    end
+
+    always @(posedge clk)begin//更新输出
+        y<=y_ns;
+        s<=d;
+    end
+    
+    always @(*)begin
+        y_ns=0;
+        d=3'b000;
+        case(cs)//根据现态计算次态
+        3'b000:begin
+            if(x==0)begin
+                d=3'b000;
+            end
+            else begin
+                d=3'b001;
+            end
+            y_ns=0;
+        end
+        3'b001:begin
+            if(x==0)begin
+                d=3'b010;
+            end
+            else begin
+                d=3'b001;
+            end
+            y_ns=0;
+        end
+        3'b010:begin
+            if(x==0)begin
+                d=3'b000;
+            end
+            else begin
+                d=3'b011;
+            end
+            y_ns=0;
+        end
+        3'b011:begin
+            if(x==0)begin
+                d=3'b100;
+            end
+            else begin
+                d=3'b001;
+            end
+            y_ns=0;
+        end
+        3'b100:begin
+            if(x==0)begin
+                d=3'b000;
+            end
+            else begin
+                d=3'b101;
+            end
+            y_ns=0;
+        end
+        3'b101:begin
+            if(x==0)begin
+                d=3'b110;
+            end
+            else begin
+                d=3'b001;
+            end
+            y_ns=0;
+        end
+        3'b110:begin
+            if(x==0)begin
+                d=3'b000;
+            end
+            else begin
+                d=3'b111;
+            end
+            y_ns=0;
+        end
+        3'b111:begin
+            if(x==0)begin
+                d=3'b000;
+                y_ns=0;
+            end
+            else begin
+                d=3'b000;
+                y_ns=1;
+            end
+        end
+        endcase
+    end
+endmodule
