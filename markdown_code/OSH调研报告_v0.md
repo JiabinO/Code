@@ -117,20 +117,20 @@ LiteOS作为一个轻量级的实时操作系统（RTOS），在设计上主要�
 (TO BE DONE)
 
 # 社区与生态支持：
-1. **Rust语言本身的生态**：
+- 1. **Rust语言本身的生态**：
 Rust语言拥有一个活跃的社区和丰富的生态系统，提供了大量的库（crates），这些库可以用来处理网络、加密、串口通信、硬件抽象等在嵌入式系统中常见的功能。
 
-2.**工具链**：
+- 2.**工具链**：
 Rust提供了稳定的工具链，包括编译器、包管理器（Cargo）和各种调试工具，这些工具支持跨平台编译和部署，非常适合嵌入式开发
 
-3.**cortex-m系列crate**：
+- 3.**cortex-m系列crate**：
 对于基于ARM Cortex-M微控制器的系统，存在一系列专门的crate，比如cortex-m、cortex-m-rt和cortex-m-semihosting，它们提供了对Cortex-M核心的支持，包括上下文切换、中断处理等功能。
 
 对应的github仓库网站：
 ```
 https://github.com/rust-embedded/cortex-m
 ```
-4.**官方资源**：
+- 4.**官方资源**：
 Rust语言的官方网站提供了大量的教程、文档和指南，帮助开发者学习如何使用Rust进行嵌入式开发。
 
 对应官方网站：
@@ -138,10 +138,10 @@ Rust语言的官方网站提供了大量的教程、文档和指南，帮助开�
 https://www.rust-lang.org/
 ```
 
-5.**论坛和社区**：
+- 5.**论坛和社区**：
 Rust社区活跃在多个论坛和社交媒体平台，如Reddit、Stack Overflow、Discord和IRC，开发者可以在这些平台上提问、分享经验和获取帮助。
 
-6.**教育资源**：
+- 6.**教育资源**：
 存在很多在线课程、书籍和教程专注于Rust的嵌入式开发，例如“The Embedded Rust Book”和“Bare Metal Programming in Rust”。
 
 # 预期成果：
