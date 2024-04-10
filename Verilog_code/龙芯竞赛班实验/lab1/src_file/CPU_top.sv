@@ -51,7 +51,7 @@ module CPU_top
                 ldb_code        = 10'h0a0,  
                 ldhu_code       = 10'h0a9,  
                 ldbu_code       = 10'h0a8,  
-
+                halt_code       = 32'h80000000,
                 beq_code        = 6'h16,    
                 bne_code        = 6'h17,    
                 blt_code        = 6'h18,    
@@ -62,6 +62,7 @@ module CPU_top
                 bl_code         = 6'h15,    
                 jirl_code       = 6'h13,    
                 nop_code        = 32'h0, 
+                
                 add_inst        = 6'h00,
                 addi_inst       = 6'h01,
                 sub_inst        = 6'h02,
@@ -102,6 +103,7 @@ module CPU_top
                 bl_inst         = 6'h25,
                 jirl_inst       = 6'h26,
                 nop_inst        = 6'h27,
+                halt_inst       = 6'h28,
                 add_op          = 5'h0,
                 addi_op         = 5'h1,
                 sub_op          = 5'h2,
@@ -142,7 +144,8 @@ module CPU_top
                 branch_bgeu     = 3'h6,
                 branch_direct   = 3'h7 )
     (
-        input clk, rstn
+        input clk, rstn,
+        output reg valid        //发送给ICache的等待信号
     );
 
     //PC
@@ -202,7 +205,8 @@ module CPU_top
     wire [31:0]             mem_read_data;
     reg  [31:0]             pipe_pc_IF_ID;
     reg  [31:0]             pipe_pc_ID_EX;
-
+    reg                     branch_enable_IF;
+    
     //ID_EX
     reg  [31:0]             rj_data_ID_EX;
     reg  [31:0]             rk_data_ID_EX;
@@ -233,30 +237,37 @@ module CPU_top
     reg                     reg_written;        //进行了寄存器堆的写，下个周期数据将更新
     reg  [4:0]              last_written_reg;   //记录上一个写入的寄存器
     reg  [31:0]             wb_data_mux;
-    wire [4:0]              ra1       = (control_bus == bne_inst | control_bus == beq_inst | control_bus == blt_inst | control_bus == bge_inst | control_bus == bltu_inst | control_bus == bgeu_inst)                                     ? rd          : rk; 
+    reg  [31:0]             mem_read_data_reg;
+    wire [4:0]              ra1       = (control_bus == bne_inst | control_bus == beq_inst | control_bus == blt_inst | control_bus == bge_inst | control_bus == bltu_inst | control_bus == bgeu_inst | control_bus == stb_inst | control_bus == sth_inst | control_bus == stw_inst) ? rd          : rk; 
     wire [4:0]              rs2_ID_EX = (control_bus_ID_EX == bne_inst | control_bus_ID_EX == beq_inst | control_bus_ID_EX == blt_inst | control_bus_ID_EX == bge_inst | control_bus_ID_EX == bltu_inst | control_bus_ID_EX == bgeu_inst) ? rd_ID_EX    : rk_ID_EX; 
     reg  [2:0]              branch_type_ID_EX;
     reg                     mem_to_reg_MEM_WB ;
     reg  [5:0]              control_bus_MEM_WB;
-                            //mem_rdata_MEM_WB还得根据要的位数来决定 TO BE DONE
+    reg  [31:0]             mem_write_data;
+    reg                     init;
+    wire                    ICache_ready;
+    reg                     ICache_ready_reg;
     assign                  Ctrl = alu_ctrl_ID_EX;
     assign                  pc_mux = branch_enable;
+    
     //pc计算完需要对指令Flush
     address_adder  address_adder_inst (
         .pc(pipe_pc_ID_EX),
         .imm(imm_ID_EX),
+        .control_bus_ID_EX(control_bus_ID_EX),
+        .rj_data_ID_EX(rj_data_ID_EX),
         .pc_jump(pc_jump)
     );
 
     instruction_memory  instruction_memory_inst (
-        .a(pc[11:2]),
-        .spo(Instruction_IF)
+      .a(pc[17:2]),
+      .spo(Instruction_IF)
     );
 
     data_memory  data_memory_inst (
-      .a(alu_res_MEM_WB[9:0]),
-      .d(mem_write_data_EX_MEM),
-      .clk(clk & mem_read_EX_MEM),
+      .a(alu_res_EX_MEM & 32'hfffffffc),//低两位不看
+      .d(mem_write_data),
+      .clk(clk),
       .we(mem_write_EX_MEM),
       .spo(mem_read_data)
     );
@@ -483,7 +494,7 @@ module CPU_top
         .rs1_ID(rj),
         .rs2_ID(rk),
         .rd_ID_EX(rd_ID_EX),
-        .mem_read(mem_read),
+        .mem_read_ID_EX(mem_read_ID_EX),
         .fStall(fStall),
         .dStall(dStall),
         .eFlush(eFlush)
@@ -586,13 +597,14 @@ module CPU_top
         .branch_direct(branch_direct)
     )
     Branch_inst (
+      .control_bus_ID_EX(control_bus_ID_EX),
       .branch_type(branch_type_ID_EX),
       .alu_res(alu_res[0]),
       .branch_enable(branch_enable)
     );
 
     //PC
-    assign pc_enable = ~fStall ;
+    assign pc_enable = ~fStall;
     assign address_adder = pc_jump; 
 
     //Decoder 
@@ -614,6 +626,18 @@ module CPU_top
             if(~fStall) begin
                 pipe_pc_IF_ID <= pc ;
             end
+            if(branch_enable) begin
+                pipe_pc_IF_ID <= pc_jump + 4;
+            end
+        end
+    end
+
+    always @(posedge clk) begin
+        if(!rstn) begin
+            branch_enable_IF <= 0;
+        end
+        else begin
+            branch_enable_IF <= branch_enable;
         end
     end
 
@@ -754,8 +778,8 @@ module CPU_top
     end
 
     always @(posedge clk) begin
-        if( !rstn || branch_enable ) begin
-            control_bus_ID_EX <= 0;
+        if( !rstn | branch_enable | (branch_enable_IF) | fStall) begin
+            control_bus_ID_EX <= 6'h27;
         end
         else begin
             control_bus_ID_EX <= control_bus;
@@ -767,7 +791,10 @@ module CPU_top
             writeback_EX_MEM <= 0;
         end
         else begin
-            writeback_EX_MEM <= writeback_ID_EX;
+            if(control_bus_ID_EX == 6'h27)
+                writeback_EX_MEM <= 0;
+            else 
+                writeback_EX_MEM <= writeback_ID_EX;
         end
     end
 
@@ -837,6 +864,7 @@ module CPU_top
         end
     end
 
+    
     always @(posedge clk) begin
         if(!rstn) begin
             control_bus_EX_MEM <= 6'h27;
@@ -922,25 +950,103 @@ module CPU_top
         if(mem_to_reg_MEM_WB) begin
             case(control_bus_MEM_WB) 
                 ldw_inst:
-                    wb_data_mux = mem_read_data;
-                ldh_inst:
-                    wb_data_mux = {{16{mem_read_data[15]}},mem_read_data[15:0]};
-                ldb_inst:
-                    wb_data_mux = {{24{mem_read_data[7]}},mem_read_data[7:0]};
-                ldbu_inst:
-                    wb_data_mux = {{24{1'b0}},mem_read_data[7:0]};
-                ldhu_inst:    
-                    wb_data_mux = {{16{1'b0}},mem_read_data[15:0]};
+                    wb_data_mux = mem_read_data_reg;
+                ldh_inst: begin
+                    case(alu_res_MEM_WB[1]) 
+                        1'b0: wb_data_mux = {{16{mem_read_data_reg[15]}},mem_read_data_reg[15:0]};
+                        1'b1: wb_data_mux = {{16{mem_read_data_reg[31]}},mem_read_data_reg[31:16]};
+                    endcase
+                end
+                ldb_inst: begin
+                    case(alu_res_MEM_WB[1:0])
+                        2'd0:   wb_data_mux = {{24{mem_read_data_reg[7]}},mem_read_data_reg[7:0]};
+                        2'd1:   wb_data_mux = {{24{mem_read_data_reg[15]}},mem_read_data_reg[15:8]};
+                        2'd2:   wb_data_mux = {{24{mem_read_data_reg[23]}},mem_read_data_reg[23:16]};
+                        2'd3:   wb_data_mux = {{24{mem_read_data_reg[31]}},mem_read_data_reg[31:24]};
+                    endcase
+                end
+                ldbu_inst: begin
+                    case(alu_res_MEM_WB[1:0])
+                        2'd0:   wb_data_mux = {{24{1'b0}},mem_read_data_reg[7:0]};
+                        2'd1:   wb_data_mux = {{24{1'b0}},mem_read_data_reg[15:7]};
+                        2'd2:   wb_data_mux = {{24{1'b0}},mem_read_data_reg[23:16]};
+                        2'd3:   wb_data_mux = {{24{1'b0}},mem_read_data_reg[31:24]};
+                    endcase
+                end
+                ldhu_inst:  begin
+                    case(alu_res_MEM_WB[1]) 
+                        1'b0: wb_data_mux = {{16{1'b0}},mem_read_data_reg[15:0]};
+                        1'b1: wb_data_mux = {{16{1'b0}},mem_read_data_reg[31:16]};
+                    endcase
+                end
             endcase
         end
         else begin
             wb_data_mux = alu_res_MEM_WB;
         end
     end
+    always @(*) begin
+        if(mem_write_EX_MEM) begin
+            case(control_bus_EX_MEM)
+                stw_inst: begin
+                    mem_write_data = mem_write_data_EX_MEM;
+                end
+                stb_inst: begin
+                    case(alu_res_EX_MEM[1:0]) 
+                        2'd0:   mem_write_data = {mem_read_data[31:8],  mem_write_data_EX_MEM[7:0]};
+                        2'd1:   mem_write_data = {mem_read_data[31:16], mem_write_data_EX_MEM[7:0], mem_read_data[7:0]};
+                        2'd2:   mem_write_data = {mem_read_data[31:24], mem_write_data_EX_MEM[7:0], mem_read_data[15:0]};
+                        2'd3:   mem_write_data = {mem_write_data_EX_MEM[7:0], mem_read_data[23:0]};
+                    endcase
+                end
+                sth_inst: begin
+                    case(alu_res_EX_MEM[1]) 
+                        1'b0:  mem_write_data = {mem_read_data[31:16], mem_write_data_EX_MEM[15:0]};
+                        1'b1:  mem_write_data = {mem_write_data_EX_MEM[15:0], mem_read_data[15:0]};
+                    endcase
+                end
+            endcase
+        end
+        else begin
+            mem_write_data = 0;
+        end
+    end
+    always @(posedge clk) begin
+        mem_read_data_reg <= mem_read_data;
+    end
+
+    always @(posedge clk) begin
+        ICache_ready_reg <= ICache_ready;
+    end
+    always @(posedge clk) begin
+        if(!rstn) begin
+            valid <= 0;
+        end
+        else begin
+            if(!init) begin     //未初始化，则valid初始化
+                valid <= 1;
+            end
+            if(ICache_ready & ~ICache_ready_reg) begin
+                valid <= 0;
+            end
+            else begin
+                valid <= 1;
+            end
+        end
+    end
+    
+    always @(posedge clk) begin
+        if(!rstn) begin
+            init <= 0;
+        end
+        else if(!valid) begin
+            init <= 1;
+        end
+    end
     //Alu
     assign Op1 =    alu_src1_ID_EX ?  pipe_pc_ID_EX
                     : 
-                    (   reg_written & last_written_reg == rj_ID_EX ?
+                    (   reg_written & last_written_reg == rj_ID_EX & rd_MEM_WB != rj_ID_EX ?
                         wb_reg_data :
                         ({32{afwd == 2'd0}} & rj_data_ID_EX) |
                         ({32{afwd == 2'd1}} & wb_data_mux  ) |
@@ -949,11 +1055,12 @@ module CPU_top
                     ;
     assign Op2 =    alu_src2_ID_EX ?  imm_ID_EX
                     :  
-                    (   reg_written & last_written_reg == rk_ID_EX ?
+                    (   reg_written & last_written_reg == rs2_ID_EX & rd_MEM_WB != rs2_ID_EX ?
                         wb_reg_data :
                         ({32{bfwd == 2'd0}} & rk_data_ID_EX) |
                         ({32{bfwd == 2'd1}} & wb_data_mux  ) |
                         ({32{bfwd == 2'd2}} & alu_res_EX_MEM)
                     );
 
+    
 endmodule
