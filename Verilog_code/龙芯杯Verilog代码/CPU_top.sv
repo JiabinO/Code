@@ -139,11 +139,28 @@ module CPU_top
 )
 
     (
-        input clk, rstn
+        input clk, rstn,
+        //BaseRAM信号
+        inout wire[31:0] base_ram_data,  //BaseRAM数据，低8位与CPLD串口控制器共享
+        output wire[19:0] base_ram_addr, //BaseRAM地址
+        output wire[3:0] base_ram_be_n,  //BaseRAM字节使能，低有效。如果不使用字节使能，请保持为0
+        output wire base_ram_ce_n,       //BaseRAM片选，低有效
+        output wire base_ram_oe_n,       //BaseRAM读使能，低有效
+        output wire base_ram_we_n,       //BaseRAM写使能，低有效
+
+        //ExtRAM信号
+        inout wire[31:0] ext_ram_data,  //ExtRAM数据
+        output wire[19:0] ext_ram_addr, //ExtRAM地址
+        output wire[3:0] ext_ram_be_n,  //ExtRAM字节使能，低有效。如果不使用字节使能，请保持为0
+        output wire ext_ram_ce_n,       //ExtRAM片选，低有效
+        output wire ext_ram_oe_n,       //ExtRAM读使能，低有效
+        output wire ext_ram_we_n        //ExtRAM写使能，低有效
     );
+
     reg [31:0]  exe_instruction_count;
     wire [31:0] pc;
     wire        load_use_stop;
+    reg         load_use_stop_reg;
     //IF_ID
     reg [31:0]  pc_IF_ID;           
 
@@ -221,6 +238,7 @@ module CPU_top
     reg         word_write;
 
     wire [31:0] instruction_pc;
+    reg  [31:0] fixed_pc;
     wire        src2_mux = (control_bus == bne_inst | control_bus == beq_inst | control_bus == blt_inst | control_bus == bge_inst | control_bus == bltu_inst | control_bus == bgeu_inst | control_bus == stb_inst | control_bus == sth_inst | control_bus == stw_inst);
     wire        ICache_miss;
     wire        DCache_miss;
@@ -234,17 +252,24 @@ module CPU_top
     reg         branch_enable_reg;
 
     wire        task_full;
+    wire        fix_flag;
+    reg         fix_flag_reg;
+
+
+    assign fix_flag = branch_enable_reg & !branch_enable & load_use_stop_reg & !load_use_stop;
+    assign fixed_pc = pc_ID_EX + 4;
     assign task_full = task_count == (1 << Queue_count_len) - 1;
-    assign ICache_addr = branch_enable ? pc_jump : pc;
+    assign ICache_addr = (fix_flag /*发生branch判断的错误，有两级错误地址流水进入到ICache*/) ? fixed_pc : (branch_enable ? pc_jump : pc);
     assign rf_src1 = rj;
     assign rf_src2 = src2_mux ? rd: rk; 
-    assign branch_enable = ((control_bus_ID_EX == beq_inst || control_bus_ID_EX == bge_inst || control_bus_ID_EX == blt_inst || control_bus_ID_EX == bgeu_inst || control_bus_ID_EX == bltu_inst || control_bus_ID_EX == bne_inst) && alu_res[0]) || control_bus_ID_EX == jirl_inst || control_bus_ID_EX == b_inst || control_bus_ID_EX == bl_inst;
+    assign branch_enable = (((control_bus_ID_EX == beq_inst || control_bus_ID_EX == bge_inst || control_bus_ID_EX == blt_inst || control_bus_ID_EX == bgeu_inst || control_bus_ID_EX == bltu_inst || control_bus_ID_EX == bne_inst) && alu_res[0]) || control_bus_ID_EX == jirl_inst || control_bus_ID_EX == b_inst || control_bus_ID_EX == bl_inst) & !load_use_stop;
     assign byte_write = (control_bus_EX_MEM == stb_inst);
     assign half_word_write = (control_bus_EX_MEM == sth_inst);
     assign word_write = (control_bus_EX_MEM == stw_inst);
     assign i_rinterrupt = branch_enable & ICache_miss & !branch_enable_reg;
     assign load_use_stop = (mem_read_EX_MEM & (rf_src1_ID_EX == rd_EX_MEM | rf_src2_ID_EX == rd_EX_MEM)) | (mem_read_MEM_WB_pipeline1 & (rf_src1_ID_EX == rd_MEM_WB_pipeline1 | rf_src2_ID_EX == rd_MEM_WB_pipeline1)) | (mem_read_MEM_WB_pipeline2 & (rf_src1_ID_EX == rd_MEM_WB_pipeline2 | rf_src2_ID_EX == rd_MEM_WB_pipeline2));
     wire   pc_enable;
+
     //计算算术逻辑运算结果
     ALU # (
       .add_op(add_op),
@@ -290,6 +315,8 @@ module CPU_top
       .pc_mux(branch_enable),
       .pc_enable(pc_enable),
       .clk(clk),
+      .fix_flag(fix_flag),
+      .fixed_pc(fixed_pc),
       .rstn(rstn),
       .address_adder(pc_jump),
       .pc(pc)
@@ -499,23 +526,23 @@ module CPU_top
     DCache_inst (
       .clk(clk),
       .rstn(rstn),
-      .DCache_wdata(DCache_wdata),  // 没考虑数据相关
+      .DCache_wdata(DCache_wdata),  
       .DCache_addr(alu_res_EX_MEM),
       .mem_read(mem_read_EX_MEM),
       .mem_write(mem_write_EX_MEM),
       .d_rready(d_rready),
       .d_wready(d_wready),
       .mem_rdata(mem_rdata),
-      .byte_write(byte_write),          //
-      .half_word_write(half_word_write),//
-      .word_write(word_write),          //
+      .byte_write(byte_write),          
+      .half_word_write(half_word_write),
+      .word_write(word_write),          
       .mem_read_valid(mem_read_valid),
       .d_rvalid(d_rvalid),
       .d_wvalid(d_wvalid),
       .d_waddr(d_waddr),
       .d_raddr(d_raddr),
       .DCache_rdata(DCache_rdata),
-      .DCache_miss(DCache_miss),
+      .DCache_miss_stop(DCache_miss),
       .d_wdata(d_wdata)
     );
 
@@ -541,6 +568,18 @@ module CPU_top
       .Offset_len(Offset_len)
     )
     Arbiter_inst (
+      .base_ram_data(base_ram_data),
+      .base_ram_addr(base_ram_addr),
+      .base_ram_be_n(base_ram_be_n),
+      .base_ram_ce_n(base_ram_ce_n),
+      .base_ram_oe_n(base_ram_oe_n),
+      .base_ram_we_n(base_ram_we_n),
+      .ext_ram_data(ext_ram_data),
+      .ext_ram_addr(ext_ram_addr),
+      .ext_ram_be_n(ext_ram_be_n),
+      .ext_ram_ce_n(ext_ram_ce_n),
+      .ext_ram_oe_n(ext_ram_oe_n),
+      .ext_ram_we_n(ext_ram_we_n),
       .clk(clk),
       .rstn(rstn),
       .i_rvalid(i_rvalid),
@@ -710,7 +749,7 @@ module CPU_top
         end
     end
   
-    assign pc_enable = (((task_count < (1 << Queue_count_len) - 1) & !ICache_miss) | branch_enable | branch_enable_reg); //在ICache上升沿时迭代
+    assign pc_enable = (((task_count < (1 << Queue_count_len) - 1) & !ICache_miss) | branch_enable | branch_enable_reg | fix_flag | fix_flag_reg); //在ICache上升沿时迭代
 
     //ID_EX
     always @(posedge clk) begin
@@ -835,7 +874,12 @@ module CPU_top
             rf_src1_rdata_ID_EX <= 0;
           end
           else begin
-            rf_src1_rdata_ID_EX <= rf_src1_rdata;
+              rf_src1_rdata_ID_EX <= rf_src1_rdata;
+          end
+        end
+        else begin
+          if(rf_src1_ID_EX == writeback_reg & rf_we_reg & load_use_stop) begin
+            rf_src1_rdata_ID_EX <= reg_writeback_data;
           end
         end
       end
@@ -1072,43 +1116,38 @@ module CPU_top
     end   
 
     always @(posedge clk) begin
-      if(!rstn | branch_enable) begin
+      if(!rstn | (branch_enable & !load_use_stop)) begin
         task_count <= 0;
       end
       else begin
-        if(branch_enable) begin //如果跳转，则清空延迟槽
-          task_count <= 0;
-        end
-        else begin
-          if(~|branch_count) begin
-            if(task_count == 0 & !ICache_miss & ~|branch_count) begin  
-              task_count <= 1;
-            end
-            else if(task_count == (1 << Queue_count_len) - 1 && !DCache_miss & !load_use_stop) begin
+        if(~|branch_count) begin
+          if(task_count == 0 & !ICache_miss & ~|branch_count) begin  
+            task_count <= 1;
+          end
+          else if(task_count == (1 << Queue_count_len) - 1 && !DCache_miss & !load_use_stop) begin
+            task_count <= task_count - 1;
+          end
+          else if((!ICache_miss & !DCache_miss & !load_use_stop) | (ICache_miss & load_use_stop & !DCache_miss)) begin
+            task_count <= task_count;
+          end
+          else if(ICache_miss & !DCache_miss & !load_use_stop) begin
+            if(task_count > 0) begin
               task_count <= task_count - 1;
             end
-            else if((!ICache_miss & !DCache_miss & !load_use_stop) | (ICache_miss & load_use_stop & !DCache_miss)) begin
-              task_count <= task_count;
-            end
-            else if(ICache_miss & !DCache_miss & !load_use_stop) begin
-              if(task_count > 0) begin
-                task_count <= task_count - 1;
-              end
-            end
-            else if(!ICache_miss & (DCache_miss | (!DCache_miss & DCache_miss_reg) | load_use_stop) & ~|branch_count) begin
-              if(task_count < (1 << Queue_count_len) - 1) begin
-                task_count <= task_count + 1;
-              end
-            end 
-            
           end
+          else if(!ICache_miss & (DCache_miss | (!DCache_miss & DCache_miss_reg) | load_use_stop) & ~|branch_count) begin
+            if(task_count < (1 << Queue_count_len) - 1) begin
+              task_count <= task_count + 1;
+            end
+          end 
+          
         end
       end
     end
 
     always @(posedge clk) begin //下降沿不该更新
       integer i;
-      if(!rstn | branch_enable) begin
+      if(!rstn | (branch_enable & !load_use_stop)) begin
         for(i = 0; i < (1 << Queue_count_len); i++) begin
           instruction_queue[i] <= 0;
         end
@@ -1140,7 +1179,7 @@ module CPU_top
     
     always @(posedge clk) begin
       integer i;
-      if(!rstn | branch_enable) begin     //branch时丢弃延迟槽所有的指令对应的pc
+      if(!rstn | (branch_enable & !load_use_stop)) begin     //branch时丢弃延迟槽所有的指令对应的pc
         for(i = 0; i < (1 << Queue_count_len); i++) begin
           instruction_pc_queue[i] <= 0;
         end
@@ -1212,6 +1251,12 @@ module CPU_top
           if(rd_ID_EX == rd_EX_MEM && rf_we_EX_MEM) begin
             DCache_wdata <= alu_res_EX_MEM;
           end
+          else if(rd_ID_EX == rd_MEM_WB_pipeline1 && rf_we_MEM_WB_pipeline1) begin
+            DCache_wdata <= alu_res_MEM_WB_pipeline1;
+          end
+          else if(rd_ID_EX == rd_MEM_WB_pipeline2 && rf_we_MEM_WB_pipeline2) begin
+            DCache_wdata <= alu_res_MEM_WB_pipeline2;
+          end
           else if(rd_ID_EX == rd_MEM_WB && rf_we_MEM_WB) begin
             DCache_wdata <= alu_res_MEM_WB;
           end
@@ -1226,6 +1271,14 @@ module CPU_top
 
   always @(posedge clk) begin
     branch_enable_reg <= branch_enable;
+  end
+
+  always @(posedge clk) begin
+    load_use_stop_reg <= load_use_stop;
+  end
+
+  always @(posedge clk) begin
+    fix_flag_reg <= fix_flag;
   end
 
   always @(posedge clk) begin
