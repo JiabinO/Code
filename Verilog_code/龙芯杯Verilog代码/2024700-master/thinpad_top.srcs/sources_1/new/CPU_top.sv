@@ -238,7 +238,6 @@ module CPU_top
     reg         word_write;
 
     wire [31:0] instruction_pc;
-    reg  [31:0] fixed_pc;
     wire        src2_mux = (control_bus == bne_inst | control_bus == beq_inst | control_bus == blt_inst | control_bus == bge_inst | control_bus == bltu_inst | control_bus == bgeu_inst | control_bus == stb_inst | control_bus == sth_inst | control_bus == stw_inst);
     wire        ICache_miss;
     wire        DCache_miss;
@@ -253,13 +252,9 @@ module CPU_top
 
     wire        task_full;
     wire        fix_flag;
-    reg         fix_flag_reg;
 
-
-    assign fix_flag = branch_enable_reg & !branch_enable & load_use_stop_reg & !load_use_stop;
-    assign fixed_pc = pc_ID_EX + 4;
     assign task_full = task_count == (1 << Queue_count_len) - 1;
-    assign ICache_addr = (fix_flag /*发生branch判断的错误，有两级错误地址流水进入到ICache*/) ? fixed_pc : (branch_enable ? pc_jump : pc);
+    assign ICache_addr = branch_enable ? pc_jump : pc;
     assign rf_src1 = rj;
     assign rf_src2 = src2_mux ? rd: rk; 
     assign branch_enable = (((control_bus_ID_EX == beq_inst || control_bus_ID_EX == bge_inst || control_bus_ID_EX == blt_inst || control_bus_ID_EX == bgeu_inst || control_bus_ID_EX == bltu_inst || control_bus_ID_EX == bne_inst) && alu_res[0]) || control_bus_ID_EX == jirl_inst || control_bus_ID_EX == b_inst || control_bus_ID_EX == bl_inst) & !load_use_stop;
@@ -315,8 +310,6 @@ module CPU_top
       .pc_mux(branch_enable),
       .pc_enable(pc_enable),
       .clk(clk),
-      .fix_flag(fix_flag),
-      .fixed_pc(fixed_pc),
       .rstn(rstn),
       .address_adder(pc_jump),
       .pc(pc)
@@ -749,7 +742,7 @@ module CPU_top
         end
     end
   
-    assign pc_enable = (((task_count < (1 << Queue_count_len) - 1) & !ICache_miss) | branch_enable | branch_enable_reg | fix_flag | fix_flag_reg); //在ICache上升沿时迭代
+    assign pc_enable = (((task_count < (1 << Queue_count_len) - 1) & !ICache_miss) | branch_enable | branch_enable_reg); //在ICache上升沿时迭代
 
     //ID_EX
     always @(posedge clk) begin
@@ -1275,10 +1268,6 @@ module CPU_top
 
   always @(posedge clk) begin
     load_use_stop_reg <= load_use_stop;
-  end
-
-  always @(posedge clk) begin
-    fix_flag_reg <= fix_flag;
   end
 
   always @(posedge clk) begin

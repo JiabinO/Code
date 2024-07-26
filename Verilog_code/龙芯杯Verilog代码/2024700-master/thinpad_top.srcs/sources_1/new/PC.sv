@@ -23,8 +23,6 @@
 module PC(
         input                   pc_mux, pc_enable, clk, rstn,   //选择线，pc迭代使能，时钟
         input           [31:0]  address_adder,                  //用于计算跳转地址的加法器
-        input           [31:0]  fixed_pc,
-        input                   fix_flag,
         output  reg     [31:0]  pc                              //输出当前pc
     );
 
@@ -37,12 +35,7 @@ module PC(
         end
         else begin
             if(pc_enable) begin
-                if(fix_flag) begin
-                    pc <= fixed_pc + 4;
-                end
-                else begin
-                    pc <= next_pc;
-                end
+                pc <= next_pc;
             end
         end
     end
