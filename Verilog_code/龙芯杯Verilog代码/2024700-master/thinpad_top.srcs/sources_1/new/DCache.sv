@@ -46,7 +46,7 @@ module DCache
         output  reg  [31                            :0] d_waddr,            // 发送给仲裁器的DCache写地址
         output  reg  [31                            :0] d_raddr,            // 发送给仲裁器的DCache读地址
         output  reg  [31                            :0] DCache_rdata,       // 发送给CPU的读数据
-        output  reg                                     DCache_miss,        // 发送给CPU的miss信号
+        output  reg                                     DCache_miss_stop,   // 发送给CPU的miss信号
         output  reg  [(1 << (3 + Offset_len)) - 1   :0] d_wdata             // 发送给仲裁器写入内存的数据
     );
 
@@ -99,11 +99,13 @@ module DCache
     reg                                     half_word_write_reg0;
     reg                                     word_write_reg;
     reg                                     word_write_reg0;
+    reg                                     DCache_miss;
     reg  [31                          :0]   miss_addr;
     wire [11 - Offset_len             :0]   mux_index; 
     wire [11 - Offset_len             :0]   index_reg;
     wire [Offset_len - 1              :0]   offset_reg;
-
+    wire restrict_test;
+    wire [(1 << (Offset_len + 3)) - 1 :0]   read_and_inserted_data;
     //忽略低四位，为的是取完整个包含目标内容的块(16*32)的全部位
     assign          index_reg = DCache_addr_reg[11:Offset_len];
     assign          offset_reg = DCache_addr_reg[Offset_len - 1:0];
@@ -112,12 +114,12 @@ module DCache
     assign          hit = {DCache_addr_reg[31:12] == tag2_reg, DCache_addr_reg[31:12] == tag1_reg} ;
     assign          d_raddr = miss_addr & 32'hffffffc0;
     //读未命中时，需要从内存读出miss_addr的内容；写未命中时，如果块是脏的，则先将脏块写回，然后读出miss_addr的内容，最后再进行插入
-    assign          d_waddr = {{!last_used_way[index] ? tag1_reg : tag2_reg}, DCache_addr_reg[11:0]} & 32'hffffffc0; 
+    assign          d_waddr = DCache_addr_reg[31:0]& 32'hffffffc0; 
     assign          mem_read_valid = mem_read_reg;
     //如果上次使用了1路，则这次替换2路，否则使用1路
     assign          mux_index = DCache_miss | state == `WAIT ? index_reg : index;
-
-
+    assign          restrict_test = DCache_addr_reg[22] & DCache_addr_reg[8:0] >= 0 & DCache_addr_reg[8:0] <= 9'h100 & mem_write_reg;
+    assign          DCache_miss_stop = DCache_miss | (restrict_test & state != `WAIT);
 
     always @(posedge clk) begin
         if(!rstn) begin
@@ -195,6 +197,19 @@ module DCache
         .processed_data(processed_data)
     );
 
+    insert_data # (
+        .Offset_len(Offset_len)
+    )
+    restrict_test_insert (
+        .offset(offset_reg),
+        .origin_data(mem_rdata),
+        .inserted_data(DCache_wdata_reg),
+        .byte_write(byte_write_reg),
+        .half_word_write(half_word_write_reg),
+        .word_write(word_write_reg),
+        .processed_data(read_and_inserted_data)
+    );
+
     DCache_rdata_mux # (
         .Offset_len(Offset_len)
     )
@@ -210,7 +225,7 @@ module DCache
             state <= `IDLE; 
         end
         else begin
-            if (state == `IDLE & DCache_miss) begin
+            if (state == `IDLE & (DCache_miss | restrict_test)) begin  //0x80400000-0x80400100写穿透
                 state <= `MISS;  
             end 
             else if (state == `MISS) begin
@@ -222,7 +237,7 @@ module DCache
                 end
             end
             else if (state == `WRITE) begin
-                if((!dirty & (d_rready & !d_rready_reg)) || (dirty & (d_wready & !d_wready_reg))) begin  //如果数据未被污染，则先等待从内存读出数据，然后对数据进行插入，才到REFILL阶段；否则需要等待写回主存然后才REFILL
+                if((((!dirty & (d_rready & !d_rready_reg)) || (dirty & (d_wready & !d_wready_reg))) & !restrict_test) | (restrict_test & d_wready & !d_wready_reg)) begin  //如果数据未被污染，则先等待从内存读出数据，然后对数据进行插入，才到REFILL阶段；否则需要等待写回主存然后才REFILL
                     state <= `REFILL;
                 end
             end
@@ -266,7 +281,7 @@ module DCache
     end
 
     
-    always @(posedge clk) begin     //不同的初始化方式会对Cache的性能有影响吗？
+    always @(posedge clk) begin     
         if(!rstn) begin
             last_used_way <= 0;
         end
@@ -292,7 +307,7 @@ module DCache
             way2_we <= 0;
         end
         else begin
-            if(state == `REFILL) begin
+            if(state == `REFILL & !restrict_test) begin
                 if(!last_used_way[index_reg]) begin
                     way1_we <= 1;
                 end
@@ -300,7 +315,7 @@ module DCache
                     way2_we <= 1;
                 end
             end
-            else if ((state == `IDLE | state == `WAIT) & !DCache_miss & mem_write_reg0) begin
+            else if ((state == `IDLE | (state == `WAIT)) & !DCache_miss & mem_write_reg0) begin
                 if(DCache_addr_reg0[31:12] == tag2) begin
                     way2_we <= 1;
                 end
@@ -330,7 +345,7 @@ module DCache
                 end    
             end
             else begin  
-                if(mem_read_reg0) begin  //读命中
+                if(mem_read_reg0) begin  //如果下一个是读请求
                     if(data_restore) begin
                         if(DCache_addr_reg0[11:Offset_len] == index_reg) begin  //如果刚刚写回
                             DCache_rdata_block <= write_data;
@@ -379,7 +394,13 @@ module DCache
             d_wvalid <= 0;
         end
         else begin
-            if(state == `MISS) begin
+            if (restrict_test & d_wready & !d_wready_reg) begin
+                d_wvalid <= 0;
+            end
+            else if(restrict_test & state == `MISS) begin
+                d_wvalid <= 1;
+            end
+            else if(state == `MISS) begin
                 if(dirty) begin         //访存miss,如果对应数据被污染则需要将污染数据写回到主存
                    d_wvalid <= 1; 
                 end
@@ -406,7 +427,7 @@ module DCache
                     dirty1[index_reg] <= 1;
                 end
                 else if(hit[1]) begin
-                    dirty2[index_reg] <= 1;
+                    dirty2[index_reg] <= 1; 
                 end
                 else begin
                     if(!last_used_way[index_reg]) begin
@@ -428,7 +449,10 @@ module DCache
             d_wdata <= 0;
         end
         else begin
-            if(state == `MISS & mem_write_reg & dirty) begin
+            if(restrict_test) begin
+                d_wdata <= read_and_inserted_data;
+            end
+            else if(state == `MISS & mem_write_reg & dirty) begin
                 d_wdata <= way_select_data;
             end
         end
@@ -516,24 +540,24 @@ module DCache
         if(!rstn) begin
             mem_read_reg <= 0;
         end
-        if(!DCache_miss) 
+        if((!DCache_miss & !restrict_test) | (restrict_test & state == `WAIT)) 
             mem_read_reg <= mem_read_reg0;
     end
 
     always @(posedge clk) begin
-        if(!DCache_miss) 
+        if((!DCache_miss & !restrict_test) | (restrict_test & state == `WAIT)) 
             mem_read_reg0 <= mem_read;
     end
     always @(posedge clk) begin
         if(!rstn) begin
             mem_write_reg <= 0;
         end
-        if(!DCache_miss) 
+        if((!DCache_miss & !restrict_test) | (restrict_test & state == `WAIT)) 
             mem_write_reg <= mem_write_reg0;
     end
 
     always @(posedge clk) begin
-        if(!DCache_miss) 
+        if((!DCache_miss & !restrict_test) | (restrict_test & state == `WAIT)) 
             mem_write_reg0 <= mem_write;
     end
 
@@ -577,49 +601,49 @@ module DCache
     end
 
     always @(posedge clk) begin
-        if(!DCache_miss) begin
+        if((!DCache_miss & !restrict_test) | (restrict_test & state == `WAIT)) begin
             word_write_reg0 <= word_write;
         end
     end
 
     always @(posedge clk) begin
-        if(!DCache_miss) begin
+        if((!DCache_miss & !restrict_test) | (restrict_test & state == `WAIT)) begin
             word_write_reg <= word_write_reg0;
         end
     end
 
     always @(posedge clk) begin
-        if(!DCache_miss) begin
+        if((!DCache_miss & !restrict_test) | (restrict_test & state == `WAIT)) begin
             half_word_write_reg0 <= half_word_write;
         end
     end
     
     always @(posedge clk) begin
-        if(!DCache_miss) begin
+        if((!DCache_miss & !restrict_test) | (restrict_test & state == `WAIT)) begin
             half_word_write_reg <= half_word_write_reg0;
         end
     end
 
     always @(posedge clk) begin
-        if(!DCache_miss) begin
+        if((!DCache_miss & !restrict_test) | (restrict_test & state == `WAIT)) begin
             byte_write_reg0 <= byte_write;
         end
     end
 
     always @(posedge clk) begin
-        if(!DCache_miss) begin
+        if((!DCache_miss & !restrict_test) | (restrict_test & state == `WAIT)) begin
             byte_write_reg <= byte_write_reg0;
         end
     end
 
     always @(posedge clk) begin
-        if(!DCache_miss) begin
+        if((!DCache_miss & !restrict_test) | (restrict_test & state == `WAIT)) begin
             DCache_wdata_reg0 <= DCache_wdata;
         end
     end
 
     always @(posedge clk) begin
-        if(!DCache_miss) begin
+        if((!DCache_miss & !restrict_test) | (restrict_test & state == `WAIT)) begin
             DCache_wdata_reg <= DCache_wdata_reg0;
         end
     end
@@ -630,7 +654,7 @@ module DCache
             tag2_reg <= 0;
         end
         else begin
-            if(!DCache_miss) begin
+            if((!DCache_miss & !restrict_test) | (restrict_test & state == `WAIT)) begin
                 if(DCache_addr_reg0[11:Offset_len] == index_reg) begin
                     tag1_reg <= tag1_reg;
                     tag2_reg <= tag2_reg;
@@ -669,7 +693,7 @@ module DCache
             DCache_addr_reg0 <= 0;
         end
         else begin
-            if(!DCache_miss) begin
+            if((!DCache_miss & !restrict_test) | (restrict_test & state == `WAIT)) begin
                 DCache_addr_reg0 <= DCache_addr;
             end
         end
@@ -680,7 +704,7 @@ module DCache
             DCache_addr_reg <= 0;
         end
         else begin
-            if(!DCache_miss) begin
+            if((!DCache_miss & !restrict_test) | (restrict_test & state == `WAIT)) begin
                 DCache_addr_reg <= DCache_addr_reg0;
             end
         end
@@ -699,5 +723,5 @@ module DCache
         DCache_miss_reg <= DCache_miss;
     end
 
-    assign data_restore = DCache_miss_reg & !DCache_miss;
+    assign data_restore = (DCache_miss_reg & !DCache_miss) | (restrict_test & state == `WAIT);
 endmodule
