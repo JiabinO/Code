@@ -7,7 +7,7 @@ _start:
     beq         zero,zero,fib
 
 info:
-    .asciz "Fib Finish."
+    .asciz "Fib Finish."     # 46 69 62 20 46 69 6e 69 73 68 2e
 
     .p2align 2
 feed:
@@ -32,16 +32,16 @@ loop0:
 WRITESERIAL:
     lu12i.w     s0,-0x40300    # s0 = 0xbfd00000
     la.local    s1,info        # 读取info第一个字，即 "Fib "
-    ld.b        a0,s1,0x0      # 获取第一个字节 "F"
+    ld.b        a0,s1,0x0      # 获取第一个字节 "F"                    80000058
 loop1:
-    addi.w      s1,s1,0x1
+    addi.w      s1,s1,0x1                                             8000005c
 .TESTW:
     ld.b        t0,s0,0x3fc    # bfd003fc 为串口地址状态位              80000060
     andi        t0,t0,0x001    # 轮询状态                              80000064
     beq         t0,zero,.TESTW # 状态为0时为忙，需要等待，死循环         80000068
     st.b        a0,s0,0x3F8    # 写字节在 bfd003f8                     8000006c
-    ld.b        a0,s1,0x0      # 获取info中下一个要发送的字节            
-    bne         a0,zero,loop1  # 获取到的字节不是结束字节则继续发送
+    ld.b        a0,s1,0x0      # 获取info中下一个要发送的字节            80000070
+    bne         a0,zero,loop1  # 获取到的字节不是结束字节则继续发送       80000074
 
 READSERIAL:
     # lui         s0,-0x40300   # s0 = 0xbfd00000
