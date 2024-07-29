@@ -1,0 +1,22 @@
+data.elf:     file format elf32-loongarch
+
+
+Disassembly of section .text:
+
+80000000 <__bss_start-0x1110>:
+	...
+80000100:	55555555 	bl	89478484(0x5555554) # 85555654 <__bss_start+0x5554544>
+80000104:	55555555 	bl	89478484(0x5555554) # 85555658 <__bss_start+0x5554548>
+80000108:	00000128 	0x00000128
+8000010c:	1392079f 	addu16i.d	$r31,$r28,-7039(0xe481)
+
+data.elf:     file format elf32-loongarch
+
+
+Disassembly of section .text:
+
+80000000 <__bss_start-0x110c>:
+	...
+80000100:	55555555 	bl	89478484(0x5555554) # 85555654 <__bss_start+0x5554548>
+80000104:	00000128 	0x00000128
+80000108:	1392079f 	addu16i.d	$r31,$r28,-7039(0xe481)

@@ -105,7 +105,6 @@ module DCache
     wire [11 - Offset_len             :0]   index_reg;
     wire [Offset_len - 1              :0]   offset_reg;
     wire restrict_test;
-    wire [(1 << (Offset_len + 3)) - 1 :0]   read_and_inserted_data;
     //忽略低四位，为的是取完整个包含目标内容的块(16*32)的全部位
     assign          index_reg = DCache_addr_reg[11:Offset_len];
     assign          offset_reg = DCache_addr_reg[Offset_len - 1:0];
@@ -203,19 +202,6 @@ module DCache
         .half_word_write(half_word_write_reg),
         .word_write(word_write_reg),
         .processed_data(processed_data)
-    );
-
-    insert_data # (
-        .Offset_len(Offset_len)
-    )
-    restrict_test_insert (
-        .offset(offset_reg),
-        .origin_data(mem_rdata),
-        .inserted_data(DCache_wdata_reg),
-        .byte_write(byte_write_reg),
-        .half_word_write(half_word_write_reg),
-        .word_write(word_write_reg),
-        .processed_data(read_and_inserted_data)
     );
 
     DCache_rdata_mux # (
@@ -463,7 +449,7 @@ module DCache
         end
         else begin
             if(restrict_test) begin
-                d_wdata <= read_and_inserted_data;
+                d_wdata <= processed_data;
             end
             else if(state == `MISS & mem_write_reg & dirty) begin
                 d_wdata <= way_select_data;

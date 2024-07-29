@@ -79,24 +79,21 @@ module Arbiter
     reg         i_rvalid_reg_hold;
     reg [31:0]  write_address;
     wire [31:0] operation_address;
-    reg [7:0]   seriel_status_reg;   //串口状态寄存器
+
+    // 串口
+    reg [7:0]   seriel_status_reg;   // 串口状态寄存器
     reg         seriel_sel;
-    reg [7:0]   seriel_data_reg;     //串口读和写字节寄存器
+    reg [7:0]   seriel_data_reg;     // 串口读和写字节寄存器
 
-    reg [(1 << (Offset_len + 3)) - 1:0] seriel_mem_reg;
-
-    assign seriel_mem_reg = {{30{1'b0}},ext_uart_ready,!ext_uart_busy,{24{1'b0}},seriel_data_reg, {((1 << (Offset_len + 3)) - 64){1'b0}}};
-    assign seriel_sel = d_raddr == 32'hbfd003fc | d_raddr == 32'hbfd003f8;
-    assign seriel_status_reg = {6'h0, {ext_uart_avai}, {!ext_uart_busy}};
+    assign seriel_sel = d_raddr == 32'hbfd003fc | d_raddr == 32'hbfd003f8;  // 串口地址选择信号
+    assign seriel_status_reg = {6'h0, {ext_uart_avai}, {!ext_uart_busy}};   // 串口状态寄存器
 
     //直连串口接收发送演示，从直连串口收到的数据再发送出去
-    wire [7:0] ext_uart_rx;
-    reg  [7:0] ext_uart_buffer, ext_uart_tx;
-    wire ext_uart_ready, ext_uart_busy;
-    reg ext_uart_clear;
-    reg ext_uart_start, ext_uart_avai;
-        
-    assign number = ext_uart_buffer;
+    wire [7:0] ext_uart_rx;                               // rxd接收到的字节数据
+    reg  [7:0] ext_uart_buffer, ext_uart_tx;              // rxd接收缓冲区，txd发送数据
+    wire ext_uart_ready, ext_uart_busy;                   // rxd接收数据有效信号，txd发送数据忙碌状态信号
+    reg ext_uart_clear;                                   // 清除rxd数据有效信号
+    reg ext_uart_start, ext_uart_avai;                    // txd发送开始信号， 串口数据读和写寄存器数据可用状态（针对rxd，对txd没用）
 
     async_receiver #(.ClkFrequency(50000000),.Baud(9600)) //接收模块，9600无检验位
     ext_uart_r(
@@ -107,17 +104,17 @@ module Arbiter
         .RxD_data(ext_uart_rx)            //接收到的一字节数据
     );
 
-    // assign ext_uart_clear = ext_uart_ready; //收到数据的同时，清除标志，因为数据已取到ext_uart_buffer中
-    always @(posedge clk) begin //接收到缓冲区ext_uart_buffer
-        if(!rstn) begin
+    always @(posedge clk) begin                         // 接收到缓冲区ext_uart_buffer
+        if(!rstn) begin                                 // 默认刚开始rxd没有收到任何数据，rxd接收到的数据也不可用
             ext_uart_buffer <= 0;
             ext_uart_avai <= 0;
         end
-        if(ext_uart_ready & !ext_uart_avai) begin     //缓冲区内容无效时将rx接收到缓冲区
+        if(ext_uart_ready & !ext_uart_avai) begin       // 缓冲区内容无效时将rx接收到缓冲区
             ext_uart_buffer <= ext_uart_rx;
             ext_uart_avai <= 1;
         end 
-        else if(!ext_uart_busy && ext_uart_avai && state == 2 & seriel_sel & buf_shift_count == 5'h01 & d_raddr == 32'hbfd003f8)begin //当发送器不再占用bfd003f8的数据（因为发送需要数据稳定）时，将数据接收下来，并且接收有效标志变为无效，等待接收下一次数据
+        else if(!ext_uart_busy && ext_uart_avai && state == 2 & seriel_sel & buf_shift_count == 5'h01 & d_raddr == 32'hbfd003f8)begin 
+            //当发送器不再占用bfd003f8的数据（因为发送需要数据稳定）时，将数据接收下来，并且接收有效标志变为无效，等待接收下一次数据
             ext_uart_avai <= 0;
         end
     end
@@ -138,7 +135,7 @@ module Arbiter
             ext_uart_start <= 0;
         end
         else begin
-            if(state == 3 & seriel_sel & buf_shift_count == 5'h01 & !ext_uart_busy) begin
+            if(state == 3 & seriel_sel & buf_shift_count == 5'h01 & !ext_uart_busy) begin       // 仲裁器处于DCache写状态且地址为串口地址bfd003f8时，将串口数据寄存器更新的同时将发送的数据更新
                 ext_uart_tx <= d_wdata[(1 << (Offset_len + 3)) - 57:(1 << (Offset_len + 3)) - 64];
                 ext_uart_start <= 1;
             end
@@ -312,8 +309,6 @@ module Arbiter
             end
         end
     end
-
-    
 
     //shift_buffer
     //高位存放高地址数据

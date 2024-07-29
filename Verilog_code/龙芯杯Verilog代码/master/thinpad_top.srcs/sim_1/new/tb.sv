@@ -41,10 +41,28 @@ wire flash_byte_n;       //Flash 8bit模式选择，低有效。在使用flash�
 
 //Windows需要注意路径分隔符的转义，例如"D:\\foo\\bar.bin"
 parameter BASE_RAM_INIT_FILE = "D:\\lab2.bin"; //BaseRAM初始化文件，请修改为实际的绝对路径
-parameter EXT_RAM_INIT_FILE = "/tmp/eram.bin";    //ExtRAM初始化文件，请修改为实际的绝对路径
+parameter EXT_RAM_INIT_FILE = "D:\\Code\\LA_competition\\2024700-master\\asm\\data.bin";    //ExtRAM初始化文件，请修改为实际的绝对路径
 parameter FLASH_INIT_FILE = "/tmp/kernel.elf";    //Flash初始化文件，请修改为实际的绝对路径
 
-assign rxd = 1'b1; //idle state
+reg [7:0] TxD_data = 8'h54;
+reg       TxD_start;
+
+//模拟rxd收到 "T"
+async_transmitter #(.ClkFrequency(50000000),.Baud(9600)) async_transmitter_inst (
+    .clk(clk_50M),
+    .TxD_start(TxD_start),
+    .TxD_data(TxD_data),
+    .TxD(rxd),
+    .TxD_busy(TxD_busy)
+  );
+
+initial begin
+    TxD_start = 0;
+    #11526960 TxD_start = 1;
+    #20 TxD_start = 0;
+end
+
+// assign rxd = 1'b1; //idle state
 
 initial begin 
     //在这里可以自定义测试输入序列，例如：

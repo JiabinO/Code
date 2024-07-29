@@ -6,7 +6,7 @@
 // TX: 8-bit data, 2 stop, no-parity
 // RX: 8-bit data, 1 stop, no-parity (the receiver can accept more stop bits of course)
 
-//`define SIMULATION   // in this mode, TX outputs one bit per clock cycle
+// `define SIMULATION   // in this mode, TX outputs one bit per clock cycle
                        // and RX receives one bit per clock cycle (for fast simulations)
 
 ////////////////////////////////////////////////////////
@@ -68,6 +68,7 @@ begin
 end
 
 assign TxD = (TxD_state<4) | (TxD_state[3] & TxD_shift[0]);  // put together the start, data and stop bits
+//TxD_state[3]相当于有效位，发送有效数据用的
 endmodule
 
 

@@ -1,0 +1,3 @@
+    .org 0x100
+    .global _start
+    .int 0x55555555, 0x128, 0x1392079f
