@@ -205,6 +205,7 @@ module CPU_top
     reg [31:0]  alu_src1, alu_src2;
     wire[31:0]  alu_res;
     wire[31:0]  pc_jump;
+    reg [31:0]  rj_rdata_ID_EX_mux;
 
     //EX_MEM
     reg [5:0]   control_bus_EX_MEM;
@@ -324,7 +325,7 @@ module CPU_top
       .pc(pc_ID_EX),
       .imm(imm_ID_EX),
       .control_bus_ID_EX(control_bus_ID_EX),
-      .rj_data_ID_EX(rf_src1_rdata_ID_EX),
+      .rj_data_ID_EX(rj_rdata_ID_EX_mux),
       .pc_jump(pc_jump)
     );
 
@@ -624,7 +625,7 @@ module CPU_top
           alu_src1 = 0;
         end
         else begin          
-          if(rf_src1_ID_EX == rd_EX_MEM && rf_we_EX_MEM) begin // rf_we_EX_MEM有可能是由于load_use_stop停顿，把rf_we_ID_EX卡死之后得到的
+          if(rf_src1_ID_EX == rd_EX_MEM && rf_we_EX_MEM & !mem_read_EX_MEM) begin // rf_we_EX_MEM有可能是由于load_use_stop停顿，把rf_we_ID_EX卡死之后得到的
             alu_src1 = alu_res_EX_MEM;
           end
           else if(rf_src1_ID_EX == rd_MEM_WB_pipeline1 && !mem_read_MEM_WB_pipeline1 && rf_we_MEM_WB_pipeline1) begin //当数据在DCache对应的流水线上且不是从缓存读出时，为alu计算写回结果
@@ -1283,6 +1284,31 @@ module CPU_top
     else begin
       if(control_bus_MEM_WB != nop_inst) begin
         exe_instruction_count <= exe_instruction_count + 1;
+      end
+    end
+  end
+
+  always @(*) begin
+    if (rf_src1_ID_EX == 0) begin
+      rj_rdata_ID_EX_mux = 0;
+    end
+    else begin          
+      if(rf_src1_ID_EX == rd_EX_MEM && rf_we_EX_MEM & !mem_read_EX_MEM) begin 
+      end
+      else if(rf_src1_ID_EX == rd_MEM_WB_pipeline1 && !mem_read_MEM_WB_pipeline1 && rf_we_MEM_WB_pipeline1) begin 
+        rj_rdata_ID_EX_mux = alu_res_MEM_WB_pipeline1;
+      end
+      else if(rf_src1_ID_EX == rd_MEM_WB_pipeline2 && !mem_read_MEM_WB_pipeline2 && rf_we_MEM_WB_pipeline2) begin
+        rj_rdata_ID_EX_mux = alu_res_MEM_WB_pipeline2;
+      end
+      else if(rf_src1_ID_EX == rd_MEM_WB && rf_we_MEM_WB) begin
+        rj_rdata_ID_EX_mux = rf_wdata;
+      end
+      else if(rf_src1_ID_EX == writeback_reg && rf_we_reg) begin
+        rj_rdata_ID_EX_mux = reg_writeback_data;
+      end
+      else begin
+        rj_rdata_ID_EX_mux = rf_src1_rdata_ID_EX;
       end
     end
   end

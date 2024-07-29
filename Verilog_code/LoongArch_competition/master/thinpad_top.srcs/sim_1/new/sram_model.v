@@ -19,7 +19,7 @@
 
 `timescale 1 ns/1 ps
 `default_nettype wire
-
+`define size 4096
 
 module sram_model(Address, DataIO, OE_n, CE_n,WE_n, LB_n, UB_n);
 
@@ -80,10 +80,10 @@ reg   activate_cebar=0,activate_webar,activate_wecebar=0;
 reg   initiate_write1,initiate_write2,initiate_write3;
 reg   WE_dly;
 reg   [19:0] Address_write1,Address_write2;
-reg   [7:0] dummy_array0 [1023:0];
-reg   [15:8] dummy_array1 [1023:0];
-reg   [7:0] mem_array0 [1023:0];
-reg   [15:8] mem_array1 [1023:0];
+reg   [7:0] dummy_array0 [`size - 1:0];
+reg   [15:8] dummy_array1 [`size - 1:0];
+reg   [7:0] mem_array0 [`size - 1:0];
+reg   [15:8] mem_array1 [`size - 1:0];
 reg   [15:0] dataIO1;
 
             //For Read Access       

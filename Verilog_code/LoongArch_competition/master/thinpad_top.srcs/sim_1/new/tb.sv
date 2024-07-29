@@ -40,8 +40,8 @@ wire flash_we_n;         //Flash写使能信号，低有效
 wire flash_byte_n;       //Flash 8bit模式选择，低有效。在使用flash的16位模式时请设为1
 
 //Windows需要注意路径分隔符的转义，例如"D:\\foo\\bar.bin"
-parameter BASE_RAM_INIT_FILE = "D:\\lab2.bin"; //BaseRAM初始化文件，请修改为实际的绝对路径
-parameter EXT_RAM_INIT_FILE = "D:\\Code\\LA_competition\\2024700-master\\asm\\data.bin";    //ExtRAM初始化文件，请修改为实际的绝对路径
+parameter BASE_RAM_INIT_FILE = "D:\\github_doc\\Code\\Verilog_code\\LoongArch_competition\\master\\asm\\supervisor_la\\supervisor_la\\kernel\\kernel.bin"; //BaseRAM初始化文件，请修改为实际的绝对路径
+parameter EXT_RAM_INIT_FILE = "D:\\data.bin";    //ExtRAM初始化文件，请修改为实际的绝对路径
 parameter FLASH_INIT_FILE = "/tmp/kernel.elf";    //Flash初始化文件，请修改为实际的绝对路径
 
 reg [7:0] TxD_data = 8'h54;
