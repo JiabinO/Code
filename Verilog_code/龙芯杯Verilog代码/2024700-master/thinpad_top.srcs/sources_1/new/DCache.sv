@@ -110,15 +110,23 @@ module DCache
     assign          index_reg = DCache_addr_reg[11:Offset_len];
     assign          offset_reg = DCache_addr_reg[Offset_len - 1:0];
     assign          DCache_miss = ~|hit & (mem_read_reg | mem_write_reg);
-    assign          dirty = !last_used_way[index_reg] ? dirty1[index_reg] : dirty2[index_reg];   
+    assign          dirty = !last_used_way[index_reg] ? dirty1[index_reg] : dirty2[index_reg];          //由于last_used_way会在IDLE且DCache_miss的状态下修改，在MISS阶段刚好是反过来的
     assign          hit = {DCache_addr_reg[31:12] == tag2_reg, DCache_addr_reg[31:12] == tag1_reg} ;
-    assign          d_raddr = miss_addr & 32'hffffffc0;
+
+    always @(*) begin
+        if(((DCache_addr_reg == 32'hbfd003fc | DCache_addr_reg == 32'hbfd003f8) & (mem_read_reg | mem_write_reg))) begin
+            d_raddr = DCache_addr_reg;
+        end
+        else begin
+            d_raddr = miss_addr & 32'hffffffc0;
+        end
+    end
     //读未命中时，需要从内存读出miss_addr的内容；写未命中时，如果块是脏的，则先将脏块写回，然后读出miss_addr的内容，最后再进行插入
     assign          d_waddr = DCache_addr_reg[31:0]& 32'hffffffc0; 
     assign          mem_read_valid = mem_read_reg;
     //如果上次使用了1路，则这次替换2路，否则使用1路
     assign          mux_index = DCache_miss | state == `WAIT ? index_reg : index;
-    assign          restrict_test = DCache_addr_reg[22] & DCache_addr_reg[8:0] >= 0 & DCache_addr_reg[8:0] <= 9'h100 & mem_write_reg;
+    assign          restrict_test = (((DCache_addr_reg[22] & DCache_addr_reg[8:0] >= 0 & DCache_addr_reg[8:0] <= 9'h100)) & mem_write_reg) | (DCache_addr_reg == 32'hbfd003fc | DCache_addr_reg == 32'hbfd003f8/*要加上这个情况，因为串口是实时变化的，有可能变动后，Cache里的内容与其不一致，因此需要默认为miss，每次都访存进行确认*/); 
     assign          DCache_miss_stop = DCache_miss | (restrict_test & state != `WAIT);
 
     always @(posedge clk) begin
@@ -242,7 +250,7 @@ module DCache
                 end
             end
             else if (state == `READ) begin
-                if((!dirty & d_rready & !d_rready_reg) || (dirty & d_wready & !d_wready_reg)) begin
+                if(((!dirty & d_rready & !d_rready_reg) || (dirty & d_wready & !d_wready_reg) & !restrict_test) | (restrict_test & d_rready & !d_rready_reg)) begin
                     state <= `REFILL;
                 end 
                 // 原来index的数据没有被污染时，只需等待仲裁器读完毕；
@@ -286,7 +294,7 @@ module DCache
             last_used_way <= 0;
         end
         else begin
-            if(state == `IDLE & !DCache_miss) begin                     //如果hit，则last_used_way改为hit的
+            if(state == `IDLE & !DCache_miss & (mem_read_reg | mem_write_reg)) begin                     //如果hit，则last_used_way改为hit的
                 if (hit[0]) begin
                     last_used_way[index_reg] <= 0;
                 end
@@ -307,7 +315,7 @@ module DCache
             way2_we <= 0;
         end
         else begin
-            if(state == `REFILL & !restrict_test) begin
+            if(state == `REFILL & (!restrict_test | DCache_miss)) begin
                 if(!last_used_way[index_reg]) begin
                     way1_we <= 1;
                 end
@@ -336,9 +344,9 @@ module DCache
             DCache_rdata_block <= 0;
         end
         else begin
-            if(DCache_miss) begin  
+            if(DCache_miss | ((DCache_addr_reg == 32'hbfd003fc | DCache_addr_reg == 32'hbfd003f8) & mem_read_reg)) begin  
                 if(mem_read_reg & d_rready & !d_rready_reg) begin  //读未命中，选择从仲裁器中返回的数据
-                    DCache_rdata_block <= mem_rdata;  //位宽不匹配
+                    DCache_rdata_block <= mem_rdata;  
                 end
                 else if(mem_write_reg) begin    //写未命中，则先加载目标地址原来的数据内容，并在原来数据内容上进行插入数据
                     DCache_rdata_block <= processed_data;
@@ -398,10 +406,15 @@ module DCache
                 d_wvalid <= 0;
             end
             else if(restrict_test & state == `MISS) begin
-                d_wvalid <= 1;
+                if(!mem_read_reg) begin
+                    d_wvalid <= 1;
+                end
+                else begin
+                    d_wvalid <= 0;
+                end
             end
-            else if(state == `MISS) begin
-                if(dirty) begin         //访存miss,如果对应数据被污染则需要将污染数据写回到主存
+            else if(state == `MISS & mem_write_reg) begin
+                if(dirty) begin            //访存miss,如果对应数据被污染则需要将污染数据写回到主存
                    d_wvalid <= 1; 
                 end
             end
@@ -711,7 +724,7 @@ module DCache
     end
 
     always @(posedge clk) begin
-        if(state == `IDLE && DCache_miss) begin
+        if(state == `IDLE && (DCache_miss | (restrict_test & (mem_read_reg | mem_write_reg)))) begin
             miss_store_way1_rdata_reg <= way1_rdata;
             miss_store_way2_rdata_reg <= way2_rdata;
             miss_store_tag1_reg <= tag1;

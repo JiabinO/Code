@@ -154,7 +154,11 @@ module CPU_top
         output wire[3:0] ext_ram_be_n,  //ExtRAM字节使能，低有效。如果不使用字节使能，请保持为0
         output wire ext_ram_ce_n,       //ExtRAM片选，低有效
         output wire ext_ram_oe_n,       //ExtRAM读使能，低有效
-        output wire ext_ram_we_n        //ExtRAM写使能，低有效
+        output wire ext_ram_we_n,       //ExtRAM写使能，低有效
+
+        //串口
+        input wire rxd,
+        output reg txd
     );
 
     reg [31:0]  exe_instruction_count;
@@ -586,7 +590,9 @@ module CPU_top
       .d_rready(d_rready),
       .d_wready(d_wready),
       .i_rready(i_rready),
-      .i_rinterrupt(i_rinterrupt)
+      .i_rinterrupt(i_rinterrupt),
+      .txd(txd),
+      .rxd(rxd)
     );
 
     wire i_rvalid;
@@ -618,7 +624,7 @@ module CPU_top
           alu_src1 = 0;
         end
         else begin          
-          if(rf_src1_ID_EX == rd_EX_MEM && rf_we_EX_MEM) begin
+          if(rf_src1_ID_EX == rd_EX_MEM && rf_we_EX_MEM) begin // rf_we_EX_MEM有可能是由于load_use_stop停顿，把rf_we_ID_EX卡死之后得到的
             alu_src1 = alu_res_EX_MEM;
           end
           else if(rf_src1_ID_EX == rd_MEM_WB_pipeline1 && !mem_read_MEM_WB_pipeline1 && rf_we_MEM_WB_pipeline1) begin //当数据在DCache对应的流水线上且不是从缓存读出时，为alu计算写回结果
@@ -950,7 +956,7 @@ module CPU_top
       end
       else begin
         if(!DCache_miss) begin  //执行跳转指令后，跳转指令和两个阶段的空指令往下流，毕竟跳转指令还是有写入寄存器堆的情况(如bl指令)
-          control_bus_EX_MEM <= control_bus_ID_EX;
+          control_bus_EX_MEM <= load_use_stop ? nop_inst : control_bus_ID_EX;
         end
       end
     end
@@ -961,7 +967,7 @@ module CPU_top
       end
       else begin
         if(!DCache_miss) begin
-          alu_res_EX_MEM <= alu_res ;
+          alu_res_EX_MEM <= load_use_stop ? 0 : alu_res ;
         end
       end
     end
@@ -972,7 +978,7 @@ module CPU_top
       end
       else begin
         if(!DCache_miss) begin
-          mem_read_EX_MEM <= mem_read_ID_EX;
+          mem_read_EX_MEM <= load_use_stop ? 0 : mem_read_ID_EX;
         end
       end
     end
@@ -983,7 +989,7 @@ module CPU_top
       end
       else begin
         if(!DCache_miss) begin
-          rf_we_EX_MEM <= rf_we_ID_EX;
+          rf_we_EX_MEM <= load_use_stop ? 0 : rf_we_ID_EX;
         end
       end
     end
@@ -1016,7 +1022,7 @@ module CPU_top
       end
       else begin
         if(!DCache_miss) begin
-          mem_write_EX_MEM <= mem_write_ID_EX;
+          mem_write_EX_MEM <= load_use_stop ? 0 : mem_write_ID_EX;
         end
       end
     end

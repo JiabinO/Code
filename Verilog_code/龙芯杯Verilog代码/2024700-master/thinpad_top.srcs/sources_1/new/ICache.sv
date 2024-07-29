@@ -55,6 +55,10 @@ module ICache
     reg [19:0]                              tag1_task_full_restore;
     reg [19:0]                              tag2_task_full_restore;
     reg                                     task_full_reg;
+    reg [19:0]                              miss_store_tag1_reg;
+    reg [19:0]                              miss_store_tag2_reg;
+    reg                                     data_restore;
+    reg                                     ICache_miss_reg;
     assign ICache_miss = ~|hit;                                 //当不处于流水线清洗时才有可能是命中 
     assign i_addr = ICache_addr_reg & 32'hffffffc0;   
     assign hit = {tag2_reg == tag_reg, tag1_reg == tag_reg};    //当输入的branch_enable生效时，令其相等？
@@ -179,8 +183,14 @@ module ICache
                  tag2_reg <= tag2_task_full_restore;
                 end
                 else begin
-                    tag1_reg <= tag1;
-                    tag2_reg <= tag2;
+                    if(ICache_addr_reg0[11:Offset_len] == index_reg) begin
+                        tag1_reg <= tag1_reg;
+                        tag2_reg <= tag2_reg;
+                    end
+                    else begin
+                        tag1_reg <= data_restore ? miss_store_tag1_reg : tag1;
+                        tag2_reg <= data_restore ? miss_store_tag2_reg : tag2;
+                    end
                 end
             end
             else if(state == `WAIT) begin //要在读取完成后将对应的tag修改，不然走不动
@@ -281,7 +291,7 @@ module ICache
             end
             else begin
                 if(!task_full) begin
-                    if(task_full_reg) begin
+                    if(task_full_reg & !branch_enable_reg) begin
                         way1_rdata_reg <= way1_rdata_task_full_restore; 
                         way2_rdata_reg <= way2_rdata_task_full_restore;
                     end
@@ -364,4 +374,17 @@ module ICache
             way2_rdata_task_full_restore <= way2_rdata;
         end
     end
-endmodule
+    
+    always @(posedge clk) begin
+        ICache_miss_reg <= ICache_miss;
+    end
+
+
+    always @(posedge clk) begin
+        if(state == `IDLE && ICache_miss) begin
+            miss_store_tag1_reg <= tag1;
+            miss_store_tag2_reg <= tag2;
+        end
+    end
+    assign data_restore = branch_enable | (!branch_enable_reg & ICache_miss_reg & !ICache_miss);
+endmodule 

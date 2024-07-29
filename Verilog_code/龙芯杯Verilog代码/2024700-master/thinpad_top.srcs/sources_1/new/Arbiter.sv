@@ -86,13 +86,14 @@ module Arbiter
     reg [(1 << (Offset_len + 3)) - 1:0] seriel_mem_reg;
 
     assign seriel_mem_reg = {{30{1'b0}},ext_uart_ready,!ext_uart_busy,{24{1'b0}},seriel_data_reg, {((1 << (Offset_len + 3)) - 64){1'b0}}};
-    assign seriel_sel = d_raddr == 32'hbfd003c0;
-    assign seriel_status_reg = {6'h0, {ext_uart_ready}, {!ext_uart_busy}};
+    assign seriel_sel = d_raddr == 32'hbfd003fc | d_raddr == 32'hbfd003f8;
+    assign seriel_status_reg = {6'h0, {ext_uart_avai}, {!ext_uart_busy}};
 
     //直连串口接收发送演示，从直连串口收到的数据再发送出去
     wire [7:0] ext_uart_rx;
     reg  [7:0] ext_uart_buffer, ext_uart_tx;
-    wire ext_uart_ready, ext_uart_clear, ext_uart_busy;
+    wire ext_uart_ready, ext_uart_busy;
+    reg ext_uart_clear;
     reg ext_uart_start, ext_uart_avai;
         
     assign number = ext_uart_buffer;
@@ -106,23 +107,29 @@ module Arbiter
         .RxD_data(ext_uart_rx)            //接收到的一字节数据
     );
 
-    assign ext_uart_clear = ext_uart_ready; //收到数据的同时，清除标志，因为数据已取到ext_uart_buffer中
-    // always @(posedge clk) begin //接收到缓冲区ext_uart_buffer
-    //     if(ext_uart_ready)begin
-    //         ext_uart_buffer <= ext_uart_rx;
-    //         ext_uart_avai <= 1;
-    //     end else if(!ext_uart_busy && ext_uart_avai)begin 
-    //         ext_uart_avai <= 0;
-    //     end
-    // end
-    // always @(posedge clk) begin //将缓冲区ext_uart_buffer发送出去
-    //     if(!ext_uart_busy && ext_uart_avai)begin 
-    //         ext_uart_tx <= ext_uart_buffer;
-    //         ext_uart_start <= 1;
-    //     end else begin 
-    //         ext_uart_start <= 0;
-    //     end
-    // end
+    // assign ext_uart_clear = ext_uart_ready; //收到数据的同时，清除标志，因为数据已取到ext_uart_buffer中
+    always @(posedge clk) begin //接收到缓冲区ext_uart_buffer
+        if(!rstn) begin
+            ext_uart_buffer <= 0;
+            ext_uart_avai <= 0;
+        end
+        if(ext_uart_ready & !ext_uart_avai) begin     //缓冲区内容无效时将rx接收到缓冲区
+            ext_uart_buffer <= ext_uart_rx;
+            ext_uart_avai <= 1;
+        end 
+        else if(!ext_uart_busy && ext_uart_avai && state == 2 & seriel_sel & buf_shift_count == 5'h01 & d_raddr == 32'hbfd003f8)begin //当发送器不再占用bfd003f8的数据（因为发送需要数据稳定）时，将数据接收下来，并且接收有效标志变为无效，等待接收下一次数据
+            ext_uart_avai <= 0;
+        end
+    end
+
+    always @(*) begin
+        if(!rstn) begin             //一开始先置为1，将ready从X清为0
+            ext_uart_clear = 1;
+        end
+        else begin                  //如果接收到的数据是有效的，且buffer的数据被接收了，则将数据接收，并将rx的接收标志清空
+            ext_uart_clear = ext_uart_avai ? 0 : ext_uart_ready;
+        end
+    end
 
     //ext_uart_tx 在st.b命令触发后更新ext_uart_tx为刚刚存储的数据
     always @(posedge clk) begin
@@ -131,7 +138,7 @@ module Arbiter
             ext_uart_start <= 0;
         end
         else begin
-            if(state == 3 & seriel_sel & buf_shift_count == 5'h01) begin
+            if(state == 3 & seriel_sel & buf_shift_count == 5'h01 & !ext_uart_busy) begin
                 ext_uart_tx <= d_wdata[(1 << (Offset_len + 3)) - 57:(1 << (Offset_len + 3)) - 64];
                 ext_uart_start <= 1;
             end
@@ -247,10 +254,30 @@ module Arbiter
             //     end
             // end
             else if((state == 0 && (i_rvalid_reg_hold || d_rvalid_reg_hold || d_wvalid_reg_hold))) begin
-                buf_shift_count <= (1 << (Offset_len - 2));
+                if(i_rvalid_reg_hold) begin
+                    buf_shift_count <= (1 << (Offset_len - 2));
+                end
+                else begin
+                    if(d_rvalid_reg_hold) begin
+                        if(seriel_sel) begin
+                            buf_shift_count <= 1;
+                        end
+                        else begin
+                            buf_shift_count <= (1 << (Offset_len - 2));
+                        end
+                    end
+                    else if(d_wvalid_reg_hold) begin
+                        if(d_waddr == 32'hbfd003c0) begin
+                            buf_shift_count <= 1;
+                        end
+                        else begin
+                            buf_shift_count <= (1 << (Offset_len - 2));
+                        end
+                    end
+                end
             end
             else if((state == 1 && buf_shift_count == 0 && (d_rvalid_reg_hold || d_wvalid_reg_hold))) begin
-                if((d_rvalid_reg_hold & d_raddr == 32'hbfd003c0) | (!d_rvalid_reg_hold & d_wvalid_reg_hold & d_waddr == 32'hbfd003c0)) begin
+                if((d_rvalid_reg_hold & seriel_sel) | (!d_rvalid_reg_hold & d_wvalid_reg_hold & d_waddr == 32'hbfd003c0)) begin
                     buf_shift_count <= 1;
                 end
                 else begin
@@ -262,7 +289,7 @@ module Arbiter
                     buf_shift_count <= (1 << (Offset_len - 2));
                 end
                 else begin
-                    if(d_wvalid_reg_hold & d_waddr == 32'hbfd003c0) begin
+                    if(d_wvalid_reg_hold & seriel_sel) begin
                         buf_shift_count <= 1;
                     end 
                     else begin
@@ -275,7 +302,7 @@ module Arbiter
                     buf_shift_count <= (1 << (Offset_len - 2));
                 end
                 else begin
-                    if(d_rvalid_reg_hold & d_raddr == 32'hbfd003c0) begin
+                    if(d_rvalid_reg_hold & seriel_sel) begin
                         buf_shift_count <= 1;
                     end 
                     else begin
@@ -481,8 +508,8 @@ module Arbiter
         if(state == 3 & seriel_sel) begin      //st.b写入的内容
             seriel_data_reg <= d_wdata[(1 << (Offset_len + 3)) - 57:(1 << (Offset_len + 3)) - 64];
         end
-        else if(ext_uart_ready) begin          //串口读到的内容
-            seriel_data_reg <= ext_uart_rx;
+        else if(!ext_uart_busy & ext_uart_avai) begin          //串口读到的内容
+            seriel_data_reg <= ext_uart_buffer;
         end
     end
 endmodule
