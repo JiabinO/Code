@@ -11,7 +11,7 @@ info:
 
     .p2align 2
 feed:
-    .asciz "All PASS!"
+    .asciz "All PASS!"       # 41 6c 6c 20 50 41 53 53 21
 
     .p2align 2
 fib:
@@ -32,26 +32,26 @@ loop0:
 WRITESERIAL:
     lu12i.w     s0,-0x40300    # s0 = 0xbfd00000
     la.local    s1,info        # 读取info第一个字，即 "Fib "
-    ld.b        a0,s1,0x0      # 获取第一个字节 "F"                    80000058
+    ld.b        a0,s1,0x0      # 获取第一个字节 "F"                    
 loop1:
-    addi.w      s1,s1,0x1                                             8000005c
+    addi.w      s1,s1,0x1      #                                      
 .TESTW:
-    ld.b        t0,s0,0x3fc    # bfd003fc 为串口地址状态位              80000060
-    andi        t0,t0,0x001    # 轮询状态                              80000064
-    beq         t0,zero,.TESTW # 状态为0时为忙，需要等待，死循环         80000068
-    st.b        a0,s0,0x3F8    # 写字节在 bfd003f8                     8000006c
-    ld.b        a0,s1,0x0      # 获取info中下一个要发送的字节            80000070
-    bne         a0,zero,loop1  # 获取到的字节不是结束字节则继续发送       80000074
+    ld.b        t0,s0,0x3fc    # bfd003fc 为串口地址状态位              
+    andi        t0,t0,0x001    # 轮询状态                              
+    beq         t0,zero,.TESTW # 状态为0时为忙，需要等待，死循环         
+    st.b        a0,s0,0x3F8    # 写字节在 bfd003f8                     
+    ld.b        a0,s1,0x0      # 获取info中下一个要发送的字节            
+    bne         a0,zero,loop1  # 获取到的字节不是结束字节则继续发送      
 
 READSERIAL:
-    # lui         s0,-0x40300   # s0 = 0xbfd00000
+    # lui         s0,-0x40300   # s0 = 0xbfd00000                      
 .TESTR:
-    ld.b        t0,s0,0x3fc     
-    andi        t0,t0,0x002
-    beq         t0,zero,.TESTR
-    ld.b        a0,s0,0x3F8
-    addi.w      t0,zero,0x54  # char 'T'
-    bne         a0,t0,READSERIAL
+    ld.b        t0,s0,0x3fc      #                                      
+    andi        t0,t0,0x002     # 获取bfd003fc第二位（数据是否有效）     
+    beq         t0,zero,.TESTR     #                                    
+    ld.b        a0,s0,0x3F8       #                                    
+    addi.w      t0,zero,0x54  # char 'T'                               
+    bne         a0,t0,READSERIAL     #                                  
 
 RANDOMTEST:
     li.w        s0, 0x80400100 # s0 = 0x80400100
@@ -60,8 +60,8 @@ RANDOMTEST:
     ld.w        s3,s0,0x8     # random
 
 slt:
-    andi        t0,s2,0x1
-    beq         t0,zero,slt_next
+    andi        t0,s2,0x1                                               
+    beq         t0,zero,slt_next                                       
     TEST_SLT(0x7245316a, 0x783506f0, 0x00000001)
     TEST_SLT(0xf6301a6b, 0x00000000, 0x00000001)
     TEST_SLT(0x00000000, 0xf5be6ec0, 0x00000000)
@@ -193,10 +193,10 @@ loop2:
 .TEST:
     ld.b        t0,s0,0x3fc
     andi        t0,t0,0x001
-    beq         t0,zero,.TEST
+    beq         t0,zero,.TEST   # 等待txd空闲，死循环
     st.b        a0,s0,0x3F8
-    ld.b        a0,s1,0x0
-    bne         a0,zero,loop2
+    ld.b        a0,s1,0x0       # 获取下一个发送的字节
+    bne         a0,zero,loop2   # 如果下一个发送的字节不为结束符则继续地址增加，寻找下一个字节
 
 end:
     beq         zero,zero,end
