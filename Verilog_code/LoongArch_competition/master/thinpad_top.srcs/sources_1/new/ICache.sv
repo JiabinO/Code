@@ -50,6 +50,7 @@ module ICache
     reg  [(1 << (3 + Offset_len)) - 1  :0]  way1_rdata_reg, way2_rdata_reg;
     wire [11 - Offset_len: 0]               mux_addr;
     reg                                     branch_enable_reg;
+    reg                                     branch_enable_reg2;                       
     reg [(1 << (3 + Offset_len)) - 1:0]     way1_rdata_task_full_restore;
     reg [(1 << (3 + Offset_len)) - 1:0]     way2_rdata_task_full_restore;
     reg [19:0]                              tag1_task_full_restore;
@@ -59,6 +60,7 @@ module ICache
     reg [19:0]                              miss_store_tag2_reg;
     reg                                     data_restore;
     reg                                     ICache_miss_reg;
+    reg [(1 << (3 + Offset_len)) - 1:0]     i_mem_rdata;              
     assign ICache_miss = ~|hit;                                 //当不处于流水线清洗时才有可能是命中 
     assign i_addr = ICache_addr_reg & 32'hffffffc0;   
     assign hit = {tag2_reg == tag_reg, tag1_reg == tag_reg};    //当输入的branch_enable生效时，令其相等？
@@ -83,7 +85,7 @@ module ICache
     )
     way1 (
         .addra(mux_addr),   //[11 - Offset_len              :0]
-        .dina(mem_rdata),   //[(1 << (3 + Offset_len)) - 1  :0]
+        .dina(i_mem_rdata),   //[(1 << (3 + Offset_len)) - 1  :0]
         .clka(clk),
         .wea(way1_we),      
         .douta(way1_rdata)  //[(1 << (3 + Offset_len)) - 1  :0]
@@ -95,7 +97,7 @@ module ICache
     )
     way2 (
         .addra(mux_addr),   //[11 - Offset_len              :0]
-        .dina(mem_rdata),   //[(1 << (3 + Offset_len)) - 1  :0]
+        .dina(i_mem_rdata),   //[(1 << (3 + Offset_len)) - 1  :0]
         .clka(clk),
         .wea(way2_we),
         .douta(way2_rdata)  //[(1 << (3 + Offset_len)) - 1  :0]
@@ -247,7 +249,7 @@ module ICache
     )
     mux_mem_inst (
         .offset(offset_reg),
-        .mem_rdata(mem_rdata),
+        .mem_rdata(i_mem_rdata),
         .mux_mem_rdata(mux_mem_rdata)
     );
 
@@ -283,10 +285,10 @@ module ICache
         else begin
             if(state == `WAIT) begin
                 if(!last_used_way[index_reg]) begin     
-                    way1_rdata_reg <= mem_rdata;
+                    way1_rdata_reg <= i_mem_rdata;
                 end
                 else begin
-                    way2_rdata_reg <= mem_rdata;
+                    way2_rdata_reg <= i_mem_rdata;
                 end
             end
             else begin
@@ -386,5 +388,22 @@ module ICache
             miss_store_tag2_reg <= tag2;
         end
     end
-    assign data_restore = branch_enable | (!branch_enable_reg & ICache_miss_reg & !ICache_miss);
-endmodule 
+
+    always @(posedge clk) begin
+        if(!rstn) begin
+            i_mem_rdata <= 0;
+        end
+        else begin
+            if(i_rready & !i_rready_reg) begin
+                i_mem_rdata <= mem_rdata;
+            end
+        end
+    end
+
+    always @(posedge clk) begin
+        branch_enable_reg2 <= branch_enable_reg;
+    end
+
+    assign data_restore = branch_enable | (!branch_enable_reg & !branch_enable_reg2 & ICache_miss_reg & !ICache_miss);
+endmodule  
+//22580.4

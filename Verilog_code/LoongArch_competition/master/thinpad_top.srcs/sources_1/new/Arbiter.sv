@@ -79,7 +79,6 @@ module Arbiter
     reg         i_rvalid_reg_hold;
     reg [31:0]  write_address;
     wire [31:0] operation_address;
-
     // 串口
     reg [7:0]   seriel_status_reg;   // 串口状态寄存器
     reg         seriel_sel;
