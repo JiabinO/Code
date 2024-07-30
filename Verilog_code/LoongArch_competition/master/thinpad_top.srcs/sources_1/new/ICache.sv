@@ -178,7 +178,7 @@ module ICache
         end
         else begin
             if((!ICache_miss & !task_full & state == `IDLE) | branch_enable | branch_enable_reg) begin
-                if(task_full_reg) begin
+                if(task_full_reg & !branch_enable & !branch_enable_reg) begin
                  tag1_reg <= tag1_task_full_restore;
                  tag2_reg <= tag2_task_full_restore;
                 end

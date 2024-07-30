@@ -874,7 +874,21 @@ module CPU_top
             rf_src1_rdata_ID_EX <= 0;
           end
           else begin
-              rf_src1_rdata_ID_EX <= rf_src1_rdata;
+              if(rf_src1 == rd_EX_MEM & rf_we_EX_MEM & !mem_read_EX_MEM) begin
+                rf_src1_rdata_ID_EX <= alu_res_EX_MEM;
+              end
+              else if(rf_src1 == rd_MEM_WB_pipeline1 & rf_we_MEM_WB_pipeline1 & !mem_read_MEM_WB_pipeline1) begin
+                rf_src1_rdata_ID_EX <= alu_res_MEM_WB_pipeline1;
+              end
+              else if(rf_src1 == rd_MEM_WB_pipeline2 & rf_we_MEM_WB_pipeline2 & !mem_read_MEM_WB_pipeline2) begin
+                rf_src1_rdata_ID_EX <= alu_res_MEM_WB_pipeline2;
+              end
+              else if(rf_src1 == rd_MEM_WB & rf_we_MEM_WB) begin
+                rf_src1_rdata_ID_EX <= rf_wdata;
+              end
+              else begin
+                rf_src1_rdata_ID_EX <= rf_src1_rdata;
+              end
           end
         end
         else begin
@@ -895,7 +909,26 @@ module CPU_top
             rf_src2_rdata_ID_EX <= 0;
           end
           else begin
-            rf_src2_rdata_ID_EX <=rf_src2_rdata;
+              if(rf_src2 == rd_EX_MEM & rf_we_EX_MEM & !mem_read_EX_MEM) begin
+                rf_src2_rdata_ID_EX <= alu_res_EX_MEM;
+              end
+              else if(rf_src2 == rd_MEM_WB_pipeline1 & rf_we_MEM_WB_pipeline1 & !mem_read_MEM_WB_pipeline1) begin
+                rf_src2_rdata_ID_EX <= alu_res_MEM_WB_pipeline1;
+              end
+              else if(rf_src2 == rd_MEM_WB_pipeline2 & rf_we_MEM_WB_pipeline2 & !mem_read_MEM_WB_pipeline2) begin
+                rf_src2_rdata_ID_EX <= alu_res_MEM_WB_pipeline2;
+              end
+              else if(rf_src2 == rd_MEM_WB & rf_we_MEM_WB) begin
+                rf_src2_rdata_ID_EX <= rf_wdata;
+              end
+              else begin
+                rf_src2_rdata_ID_EX <= rf_src2_rdata;
+              end
+          end
+        end
+        else begin
+          if(rf_src2_ID_EX == writeback_reg & rf_we_reg & load_use_stop) begin
+            rf_src2_rdata_ID_EX <= reg_writeback_data;
           end
         end
       end
@@ -1258,7 +1291,7 @@ module CPU_top
             DCache_wdata <= alu_res_MEM_WB_pipeline2;
           end
           else if(rd_ID_EX == rd_MEM_WB && rf_we_MEM_WB) begin
-            DCache_wdata <= alu_res_MEM_WB;
+            DCache_wdata <= rf_wdata;
           end
           else if(rd_ID_EX == writeback_reg && rf_we_reg) begin
             DCache_wdata <= reg_writeback_data;
@@ -1312,4 +1345,5 @@ module CPU_top
       end
     end
   end
+
   endmodule

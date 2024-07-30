@@ -125,7 +125,7 @@ module DCache
     assign          mem_read_valid = mem_read_reg;
     //如果上次使用了1路，则这次替换2路，否则使用1路
     assign          mux_index = DCache_miss | state == `WAIT ? index_reg : index;
-    assign          restrict_test = (((DCache_addr_reg[22] & DCache_addr_reg[8:0] >= 0 & DCache_addr_reg[8:0] <= 9'h100)) & mem_write_reg) | (DCache_addr_reg == 32'hbfd003fc | DCache_addr_reg == 32'hbfd003f8/*要加上这个情况，因为串口是实时变化的，有可能变动后，Cache里的内容与其不一致，因此需要默认为miss，每次都访存进行确认*/); 
+    assign          restrict_test = (((DCache_addr_reg[22:20] == 3'd4 & DCache_addr_reg[8:0] >= 0 & DCache_addr_reg[8:0] <= 9'h100)) & mem_write_reg) | (DCache_addr_reg == 32'hbfd003fc | DCache_addr_reg == 32'hbfd003f8/*要加上这个情况，因为串口是实时变化的，有可能变动后，Cache里的内容与其不一致，因此需要默认为miss，每次都访存进行确认*/); 
     assign          DCache_miss_stop = DCache_miss | (restrict_test & state != `WAIT);
 
     always @(posedge clk) begin
@@ -347,15 +347,15 @@ module DCache
                         else if(DCache_addr_reg0[31:12] == miss_store_tag1_reg) begin //第一路命中
                             DCache_rdata_block <= miss_store_way1_rdata_reg;
                         end
-                        else begin  //第二路命中
+                        else if(DCache_addr_reg0[31:12] == miss_store_tag2_reg)begin  //第二路命中
                             DCache_rdata_block <= miss_store_way2_rdata_reg;
                         end
                     end
                     else begin
-                        if(hit[0]) begin
+                        if(DCache_addr_reg0[31:12] == tag1) begin
                             DCache_rdata_block <= way1_rdata;   
                         end
-                        else begin
+                        else if(DCache_addr_reg0[31:12] == tag2) begin
                             DCache_rdata_block <= way2_rdata;
                         end
                     end
@@ -474,9 +474,9 @@ module DCache
                 end
             end
             else if(state == `IDLE & !DCache_miss) begin
-                if(DCache_addr[31:12] == tag2) //如果tag相同，选择上个周期读出的新数据
+                if(DCache_addr_reg0[31:12] == tag2) //如果tag相同，选择上个周期读出的新数据
                     origin_data <= way2_rdata;
-                else if(DCache_addr[31:12] == tag1) 
+                else if(DCache_addr_reg0[31:12] == tag1) 
                     origin_data <= way1_rdata;
                 else
                     origin_data <= way_select_data;
@@ -654,7 +654,7 @@ module DCache
         end
         else begin
             if((!DCache_miss & !restrict_test) | (restrict_test & state == `WAIT)) begin
-                if(DCache_addr_reg0[11:Offset_len] == index_reg) begin
+                if(DCache_addr_reg0[11:Offset_len] == index_reg & (mem_read_reg | mem_write_reg)) begin
                     tag1_reg <= tag1_reg;
                     tag2_reg <= tag2_reg;
                 end
