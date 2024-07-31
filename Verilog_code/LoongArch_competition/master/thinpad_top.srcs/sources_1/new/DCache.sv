@@ -125,7 +125,7 @@ module DCache
     assign          mem_read_valid = mem_read_reg;
     //如果上次使用了1路，则这次替换2路，否则使用1路
     assign          mux_index = DCache_miss | state == `WAIT ? index_reg : index;
-    assign          restrict_test = (((DCache_addr_reg[22:20] == 3'd4 & DCache_addr_reg[8:0] >= 0 & DCache_addr_reg[8:0] <= 9'h100)) & mem_write_reg) | (DCache_addr_reg == 32'hbfd003fc | DCache_addr_reg == 32'hbfd003f8/*要加上这个情况，因为串口是实时变化的，有可能变动后，Cache里的内容与其不一致，因此需要默认为miss，每次都访存进行确认*/); 
+    assign          restrict_test = ((((DCache_addr_reg[22:20] == 3'd4 & DCache_addr_reg[8:0] >= 0 & DCache_addr_reg[8:0] <= 9'h100)) | (DCache_addr_reg >= 32'h80100000 & DCache_addr_reg <= 32'h803fffff)) & mem_write_reg) | (DCache_addr_reg == 32'hbfd003fc | DCache_addr_reg == 32'hbfd003f8/*要加上这个情况，因为串口是实时变化的，有可能变动后，Cache里的内容与其不一致，因此需要默认为miss，每次都访存进行确认*/); 
     assign          DCache_miss_stop = DCache_miss | (restrict_test & state != `WAIT);
 
     always @(posedge clk) begin

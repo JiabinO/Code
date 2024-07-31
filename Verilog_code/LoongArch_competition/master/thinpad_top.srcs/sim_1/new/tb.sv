@@ -58,13 +58,241 @@ async_transmitter #(.ClkFrequency(50000000),.Baud(115200)) async_transmitter_ins
 
 initial begin
     TxD_start = 0;
-    // #3351250 TxD_start = 1;
-    // #20 TxD_start = 0;
+    #3350000 TxD_start = 1;
+    #20 TxD_start = 0;      // A
+    repeat(12) begin
+        #92280 TxD_start = 1;
+        #20 TxD_start = 0;
+    end
+    repeat(10) begin
+        #92380 TxD_start = 1;
+        #20    TxD_start = 0;
+        repeat(12) begin
+            #92280 TxD_start = 1;
+            #20 TxD_start = 0;
+        end
+    end
+    repeat(9) begin
+        #92280 TxD_start = 1;
+        #20 TxD_start = 0;
+    end
+
+    #3855680 TxD_start = 1;
+    #20     TxD_start = 0;
+
+    repeat(4) begin
+        #92280 TxD_start = 1;
+        #20 TxD_start = 0;
+    end
+
 end
 
-// initial begin
-//     TxD_data = 8'h41;   // A 
-// end
+initial begin
+    TxD_data = 8'h00;
+    // 发送字符 'A'
+    #3350000 TxD_data = 8'h41;  // A
+    #92300 TxD_data = 8'h00;
+    #92300 TxD_data = 8'h00;
+    #92300 TxD_data = 8'h10;
+    #92300 TxD_data = 8'h80;  // 地址
+
+    #92300 TxD_data = 8'h04;
+    #92300 TxD_data = 8'h00;
+    #92300 TxD_data = 8'h00;
+    #92300 TxD_data = 8'h00;  // 长度
+
+    #92300 TxD_data = 8'h0C;
+    #92300 TxD_data = 8'h04;
+    #92300 TxD_data = 8'h80;
+    #92300 TxD_data = 8'h02;  // 指令1
+
+    // 发送字符 'A'
+    #92380 TxD_data = 8'h41;  // A
+    #92300 TxD_data = 8'h04;
+    #92300 TxD_data = 8'h00;
+    #92300 TxD_data = 8'h10;
+    #92300 TxD_data = 8'h80;  // 地址
+
+    #92300 TxD_data = 8'h04;
+    #92300 TxD_data = 8'h00;
+    #92300 TxD_data = 8'h00;
+    #92300 TxD_data = 8'h00;  // 长度
+
+    #92300 TxD_data = 8'h0D;
+    #92300 TxD_data = 8'h04;
+    #92300 TxD_data = 8'h80;
+    #92300 TxD_data = 8'h02;  // 指令2
+
+    // 发送字符 'A'
+    #92380 TxD_data = 8'h41;  // A
+    #92300 TxD_data = 8'h08;
+    #92300 TxD_data = 8'h00;
+    #92300 TxD_data = 8'h10;
+    #92300 TxD_data = 8'h80;  // 地址
+
+    #92300 TxD_data = 8'h04;
+    #92300 TxD_data = 8'h00;
+    #92300 TxD_data = 8'h00;
+    #92300 TxD_data = 8'h00;  // 长度
+
+    #92300 TxD_data = 8'h04;
+    #92300 TxD_data = 8'h80;
+    #92300 TxD_data = 8'h00;
+    #92300 TxD_data = 8'h15;  // 指令3
+
+    // 发送字符 'A'
+    #92380 TxD_data = 8'h41;  // A
+    #92300 TxD_data = 8'h0C;
+    #92300 TxD_data = 8'h00;
+    #92300 TxD_data = 8'h10;
+    #92300 TxD_data = 8'h80;  // 地址
+
+    #92300 TxD_data = 8'h04;
+    #92300 TxD_data = 8'h00;
+    #92300 TxD_data = 8'h00;
+    #92300 TxD_data = 8'h00;  // 长度
+
+    #92300 TxD_data = 8'h85;
+    #92300 TxD_data = 8'h80;
+    #92300 TxD_data = 8'h80;
+    #92300 TxD_data = 8'h02;  // 指令4
+
+    // 发送字符 'A'
+    #92380 TxD_data = 8'h41;  // A
+    #92300 TxD_data = 8'h10;
+    #92300 TxD_data = 8'h00;
+    #92300 TxD_data = 8'h10;
+    #92300 TxD_data = 8'h80;  // 地址
+
+    #92300 TxD_data = 8'h04;
+    #92300 TxD_data = 8'h00;
+    #92300 TxD_data = 8'h00;
+    #92300 TxD_data = 8'h00;  // 长度
+
+    #92300 TxD_data = 8'h8E;
+    #92300 TxD_data = 8'h35;
+    #92300 TxD_data = 8'h10;
+    #92300 TxD_data = 8'h00;  // 指令5
+
+    // 发送字符 'A'
+    #92380 TxD_data = 8'h41;  // A
+    #92300 TxD_data = 8'h14;
+    #92300 TxD_data = 8'h00;
+    #92300 TxD_data = 8'h10;
+    #92300 TxD_data = 8'h80;  // 地址
+
+    #92300 TxD_data = 8'h04;
+    #92300 TxD_data = 8'h00;
+    #92300 TxD_data = 8'h00;
+    #92300 TxD_data = 8'h00;  // 长度
+
+    #92300 TxD_data = 8'hAC;
+    #92300 TxD_data = 8'h01;
+    #92300 TxD_data = 8'h80;
+    #92300 TxD_data = 8'h02;  // 指令6
+
+    // 发送字符 'A'
+    #92380 TxD_data = 8'h41;  // A
+    #92300 TxD_data = 8'h18;
+    #92300 TxD_data = 8'h00;
+    #92300 TxD_data = 8'h10;
+    #92300 TxD_data = 8'h80;  // 地址
+
+    #92300 TxD_data = 8'h04;
+    #92300 TxD_data = 8'h00;
+    #92300 TxD_data = 8'h00;
+    #92300 TxD_data = 8'h00;  // 长度
+
+    #92300 TxD_data = 8'hCD;
+    #92300 TxD_data = 8'h01;
+    #92300 TxD_data = 8'h80;
+    #92300 TxD_data = 8'h02;  // 指令7
+
+    // 发送字符 'A'
+    #92380 TxD_data = 8'h41;  // A
+    #92300 TxD_data = 8'h1C;
+    #92300 TxD_data = 8'h00;
+    #92300 TxD_data = 8'h10;
+    #92300 TxD_data = 8'h80;  // 地址
+
+    #92300 TxD_data = 8'h04;
+    #92300 TxD_data = 8'h00;
+    #92300 TxD_data = 8'h00;
+    #92300 TxD_data = 8'h00;  // 长度
+
+    #92300 TxD_data = 8'h8E;
+    #92300 TxD_data = 8'h00;
+    #92300 TxD_data = 8'h80;
+    #92300 TxD_data = 8'h29;  // 指令8
+
+    // 发送字符 'A'
+    #92380 TxD_data = 8'h41;  // A
+    #92300 TxD_data = 8'h20;
+    #92300 TxD_data = 8'h00;
+    #92300 TxD_data = 8'h10;
+    #92300 TxD_data = 8'h80;  // 地址
+
+    #92300 TxD_data = 8'h04;
+    #92300 TxD_data = 8'h00;
+    #92300 TxD_data = 8'h00;
+    #92300 TxD_data = 8'h00;  // 长度
+
+    #92300 TxD_data = 8'h84;
+    #92300 TxD_data = 8'h10;
+    #92300 TxD_data = 8'h80;
+    #92300 TxD_data = 8'h02;  // 指令9
+
+    // 发送字符 'A'
+    #92380 TxD_data = 8'h41;  // A
+    #92300 TxD_data = 8'h24;
+    #92300 TxD_data = 8'h00;
+    #92300 TxD_data = 8'h10;
+    #92300 TxD_data = 8'h80;  // 地址
+
+    #92300 TxD_data = 8'h04;
+    #92300 TxD_data = 8'h00;
+    #92300 TxD_data = 8'h00;
+    #92300 TxD_data = 8'h00;  // 长度
+
+    #92300 TxD_data = 8'h85;
+    #92300 TxD_data = 8'hEC;
+    #92300 TxD_data = 8'hFF;
+    #92300 TxD_data = 8'h5F;  // 指令10
+
+    // 发送字符 'A'
+    #92380 TxD_data = 8'h41;  // A
+    #92300 TxD_data = 8'h28;
+    #92300 TxD_data = 8'h00;
+    #92300 TxD_data = 8'h10;
+    #92300 TxD_data = 8'h80;  // 地址
+    
+    #92300 TxD_data = 8'h04;
+    #92300 TxD_data = 8'h00;
+    #92300 TxD_data = 8'h00;
+    #92300 TxD_data = 8'h00;  // 长度
+
+    #92300 TxD_data = 8'h20;
+    #92300 TxD_data = 8'h00;
+    #92300 TxD_data = 8'h00;
+    #92300 TxD_data = 8'h4c;  // 指令11
+
+    #92380 TxD_data = 8'h44;  // D
+    #92300 TxD_data = 8'h00;
+    #92300 TxD_data = 8'h00;
+    #92300 TxD_data = 8'h10;
+    #92300 TxD_data = 8'h80;  // 地址
+
+    #92300 TxD_data = 8'h2c;
+    #92300 TxD_data = 8'h00;
+    #92300 TxD_data = 8'h00;
+    #92300 TxD_data = 8'h00;  // 长度
+
+    #3855680 TxD_data = 8'h47;
+    #92300 TxD_data = 8'h00;
+    #92300 TxD_data = 8'h00;
+    #92300 TxD_data = 8'h10;
+    #92300 TxD_data = 8'h80;  // 地址
+end
 // assign rxd = 1'b1; //idle state
 
 initial begin 

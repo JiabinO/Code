@@ -146,7 +146,7 @@ module Arbiter
         end
     end
     
-    async_transmitter #(.ClkFrequency(50000000),.Baud(9600)) //发送模块，9600无检验位
+    async_transmitter #(.ClkFrequency(50000000),.Baud(9600x)) //发送模块，9600无检验位
     ext_uart_t(
         .clk(clk),                    //外部时钟信号
         .TxD(txd),                    //串行信号输出
