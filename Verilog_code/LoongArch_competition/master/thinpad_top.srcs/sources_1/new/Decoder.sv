@@ -43,6 +43,7 @@ module Decoder
                 srli_code       = 17'h00089,
                 sra_code        = 17'h00030,
                 srai_code       = 17'h00091,
+                mulw_code       = 17'h00038,
                 stw_code        = 10'h0a6,  
                 sth_code        = 10'h0a5,  
                 stb_code        = 10'h0a4,  
@@ -103,7 +104,8 @@ module Decoder
                 bl_inst         = 6'h25, 
                 jirl_inst       = 6'h26,
                 nop_inst        = 6'h27,
-                halt_inst       = 6'h28
+                halt_inst       = 6'h28,
+                mulw_inst       = 6'h29
     )
     (
         input       [31:0]  Instruction,
@@ -124,7 +126,8 @@ module Decoder
                     Instruction[31:15] == xor_code      ||
                     Instruction[31:15] == sll_code      ||
                     Instruction[31:15] == srl_code      ||
-                    Instruction[31:15] == sra_code  }
+                    Instruction[31:15] == sra_code      ||
+                    Instruction[31:15] == mulw_code}
                     } 
                     & Instruction[14:10]) ;
     
@@ -142,6 +145,7 @@ module Decoder
                     Instruction[31:15] == slli_code     ||
                     Instruction[31:15] == srli_code     ||
                     Instruction[31:15] == srai_code     ||
+                    Instruction[31:15] == mulw_code     ||
 
                     Instruction[31:22] == slti_code     ||
                     Instruction[31:22] == sltui_code    ||
@@ -182,6 +186,7 @@ module Decoder
                     Instruction[31:15] == slli_code     ||
                     Instruction[31:15] == srli_code     ||
                     Instruction[31:15] == srai_code     ||
+                    Instruction[31:15] == mulw_code     ||
 
                     Instruction[31:22] == slti_code     ||
                     Instruction[31:22] == sltui_code    ||
@@ -212,6 +217,7 @@ module Decoder
                     |
                     ({5{Instruction[31:26] == bl_code}} & 5'h1)
                     ;
+                    
     assign control_bus =    ({6{Instruction[31:15] == add_code }}       & add_inst)         |
                             ({6{Instruction[31:15] == sub_code }}       & sub_inst)         |
                             ({6{Instruction[31:15] == slt_code }}       & slt_inst)         |

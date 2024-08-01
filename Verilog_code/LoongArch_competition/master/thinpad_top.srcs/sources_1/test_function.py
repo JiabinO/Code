@@ -26,15 +26,15 @@ USER_PROGRAM = binascii.unhexlify(
 )
 
 addr = 0x80100000
-# for i in range(0, len(USER_PROGRAM), 4):
-#     print(bytes2hex(b'A'))
-#     print(bytes2hex(int2bytes(addr + i)))
-#     print(bytes2hex(int2bytes(4)))
-#     print(bytes2hex(USER_PROGRAM[i:i+4]))
+for i in range(0, len(USER_PROGRAM), 4):
+    print(bytes2hex(b'A'))
+    print(bytes2hex(int2bytes(addr + i)))
+    print(bytes2hex(int2bytes(4)))
+    print(bytes2hex(USER_PROGRAM[i:i+4]))
 
 # print(bytes2hex(b'D'))
 # print(bytes2hex(int2bytes(addr)))
 # print(bytes2hex(int2bytes(len(USER_PROGRAM))))
 
-print(bytes2hex(b'G'))
-print(bytes2hex(int2bytes(addr)))
+# print(bytes2hex(b'G'))
+# print(bytes2hex(int2bytes(addr)))

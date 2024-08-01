@@ -134,7 +134,7 @@ module Arbiter
             ext_uart_start <= 0;
         end
         else begin
-            if(state == 3 & seriel_sel & buf_shift_count == 5'h01 & !ext_uart_busy) begin       // 仲裁器处于DCache写状态且地址为串口地址bfd003f8时，将串口数据寄存器更新的同时将发送的数据更新
+            if(state == 3 & d_waddr == 32'hbfd003c0 & buf_shift_count == 5'h01 & !ext_uart_busy) begin       // 仲裁器处于DCache写状态且地址为串口地址bfd003f8时，将串口数据寄存器更新的同时将发送的数据更新
                 ext_uart_tx <= d_wdata[(1 << (Offset_len + 3)) - 57:(1 << (Offset_len + 3)) - 64];
                 ext_uart_start <= 1;
             end
@@ -146,7 +146,7 @@ module Arbiter
         end
     end
     
-    async_transmitter #(.ClkFrequency(50000000),.Baud(9600x)) //发送模块，9600无检验位
+    async_transmitter #(.ClkFrequency(50000000),.Baud(9600)) //发送模块，9600无检验位
     ext_uart_t(
         .clk(clk),                    //外部时钟信号
         .TxD(txd),                    //串行信号输出
@@ -155,7 +155,7 @@ module Arbiter
         .TxD_data(ext_uart_tx)        //待发送的数据
     );
 
-    assign mux_read_data = read_address[22] ? ext_ram_data : base_ram_data;
+    assign mux_read_data = read_address >= 32'h80400000 ? ext_ram_data : base_ram_data;
     assign operation_address = state == 3 ? write_address : read_address;
     assign base_ram_oe_n = !base_ram_we_n;
     assign ext_ram_oe_n = !ext_ram_we_n;
@@ -165,7 +165,7 @@ module Arbiter
     assign ext_ram_be_n = 0;
     assign base_ram_be_n = 0;
     assign ext_ram_addr = operation_address[21:2];
-    assign base_ram_ce_n = operation_address[22];
+    assign base_ram_ce_n = !(operation_address <= 32'h803fffff);
     assign ext_ram_ce_n = !base_ram_ce_n;
     assign base_ram_we_n = !Base_we;
     assign ext_ram_we_n = !Ext_we;    
@@ -424,7 +424,7 @@ module Arbiter
                 (state == 1 && buf_shift_count == 0 && !d_rvalid_reg_hold)  || 
                 (state == 2 && buf_shift_count == 0 && !i_rvalid_reg_hold)) &&
                 d_wvalid_reg_hold)  begin
-                if(!seriel_sel) begin
+                if(!(d_waddr == 32'hbfd003fc0)) begin   // 3820650
                     if(d_waddr[22]) begin
                         Ext_we <= 1;
                     end
@@ -499,7 +499,7 @@ module Arbiter
 
 
     always @(posedge clk) begin
-        if(state == 3 & seriel_sel) begin      //st.b写入的内容
+        if(state == 3 & d_waddr == 32'hbfd003c0) begin      //st.b写入的内容
             seriel_data_reg <= d_wdata[(1 << (Offset_len + 3)) - 57:(1 << (Offset_len + 3)) - 64];
         end
         else if(!ext_uart_busy & ext_uart_avai) begin          //串口读到的内容

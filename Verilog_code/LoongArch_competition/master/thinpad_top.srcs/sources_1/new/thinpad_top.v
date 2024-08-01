@@ -24,6 +24,7 @@ module thinpad_top
             srli_code       = 17'h00089,
             sra_code        = 17'h00030,
             srai_code       = 17'h00091,
+            mulw_code       = 17'h00038,
             stw_code        = 10'h0a6,  
             sth_code        = 10'h0a5,  
             stb_code        = 10'h0a4,  
@@ -84,6 +85,7 @@ module thinpad_top
             jirl_inst       = 6'h26,
             nop_inst        = 6'h27,
             halt_inst       = 6'h28,
+            mulw_inst       = 6'h29,
             add_op          = 5'h00,
             addi_op         = 5'h01,
             sub_op          = 5'h02,
@@ -114,6 +116,7 @@ module thinpad_top
             bgeu_op         = 5'h1b,
             bl_op           = 5'h1c,
             jirl_op         = 5'h1d,
+            mulw_op         = 5'h1e,
             Offset_len      = 6  ,
             Queue_count_len = 4
 )
@@ -226,6 +229,7 @@ CPU_top # (
     .srli_code(srli_code),
     .sra_code(sra_code),
     .srai_code(srai_code),
+    .mulw_code(mulw_code),
     .stw_code(stw_code),
     .sth_code(sth_code),
     .stb_code(stb_code),
@@ -286,6 +290,7 @@ CPU_top # (
     .jirl_inst(jirl_inst),
     .nop_inst(nop_inst),
     .halt_inst(halt_inst),
+    .mulw_inst(mulw_inst),
     .add_op(add_op),
     .addi_op(addi_op),
     .sub_op(sub_op),
@@ -316,6 +321,7 @@ CPU_top # (
     .bgeu_op(bgeu_op),
     .bl_op(bl_op),
     .jirl_op(jirl_op),
+    .mulw_op(mulw_op),
     .Offset_len(Offset_len),
     .Queue_count_len(Queue_count_len)
         )

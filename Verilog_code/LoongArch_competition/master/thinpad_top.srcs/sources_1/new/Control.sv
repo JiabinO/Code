@@ -61,6 +61,7 @@ module Control
                 bl_inst         = 6'h25,
                 jirl_inst       = 6'h26,
                 nop_inst        = 6'h27,
+                mulw_inst       = 6'h29,
                 add_op          = 5'h00,
                 addi_op         = 5'h01,
                 sub_op          = 5'h02,
@@ -90,7 +91,8 @@ module Control
                 bltu_op         = 5'h1a,
                 bgeu_op         = 5'h1b,
                 bl_op           = 5'h1c,
-                jirl_op         = 5'h1d   
+                jirl_op         = 5'h1d,
+                mulw_op         = 5'h1e   
     )
     (
         input       [5:0]   control_bus,        //译码输出对应命令编码
@@ -134,7 +136,8 @@ module Control
                                 ({5{control_bus == bltu_inst}}      &  bltu_op)         |
                                 ({5{control_bus == bgeu_inst}}      &  bgeu_op)         |
                                 ({5{control_bus == bl_inst}}        &  bl_op)           |
-                                ({5{control_bus == jirl_inst}}      &  jirl_op)
+                                ({5{control_bus == jirl_inst}}      &  jirl_op)         |
+                                ({5{control_bus == mulw_inst}}      &  mulw_op)
                                 ;
 
     // assign branch_type  =       ({3{control_bus == beq_inst }} & branch_beq)    |
@@ -187,7 +190,8 @@ module Control
                                     control_bus == ldhu_inst        |
                                     control_bus == ldbu_inst        |
                                     control_bus == bl_inst          |
-                                    control_bus == jirl_inst
+                                    control_bus == jirl_inst        |
+                                    control_bus == mulw_inst
                                 );
 
     // // 0 - rj, 1 - pc

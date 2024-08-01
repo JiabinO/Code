@@ -50,12 +50,14 @@ module ALU
                 bltu_op         = 5'h1a,
                 bgeu_op         = 5'h1b,
                 bl_op           = 5'h1c,
-                jirl_op         = 5'h1d
+                jirl_op         = 5'h1d,
+                mulw_op         = 5'h1e
     )
     (
         input       [31:0]  Op1, 
         input       [31:0]  Op2,   //Op1数据来源有rj,pc, Op2数据来源有rk,imm32(要预处理auipc情形),4
         input       [4:0]   Ctrl,
+        input               clk,
         output  reg [31:0]  alu_res
     );
 
@@ -64,7 +66,18 @@ module ALU
     wire [31:0] xor_result              =   Op1 ^ Op2;
     wire [31:0] nor_result              =   ~or_result;
     wire [31:0] adder_result;
+    wire [63:0] mul_res;
+    wire [31:0] mul_l_result            =   mul_res[31:0];  //低32位乘法结果
+    wire [31:0] mul_h_result            =   mul_res[63:32]; //高32位乘法结果
     wire        adder_cout;
+
+    multiplier  multiplier_inst (
+        .a(Op1),
+        .b(Op2),
+        .clk(clk),
+        .mul_res(mul_res)
+    );
+
     assign {adder_cout, adder_result}   =   Op1 + ( Ctrl == sub_op      |
                                                     Ctrl == slt_op      | 
                                                     Ctrl == slti_op     | 
@@ -126,6 +139,7 @@ module ALU
                                             ({{31{1'b0}},{Ctrl == blt_op & slt_result[0]}})                                                                             |
                                             ({{31{1'b0}},{Ctrl == bge_op & !slt_result[0]}})                                                                            |
                                             ({{31{1'b0}},{Ctrl == bltu_op & sltu_result[0]}})                                                                           |
-                                            ({{31{1'b0}},{Ctrl == bgeu_op & !sltu_result[0]}})                              
+                                            ({{31{1'b0}},{Ctrl == bgeu_op & !sltu_result[0]}})                                                                          |
+                                            ({32{Ctrl == mulw_op}}                                                                              & mul_l_result)
                                             ;
 endmodule

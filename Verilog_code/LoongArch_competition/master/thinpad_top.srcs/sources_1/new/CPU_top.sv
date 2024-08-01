@@ -44,6 +44,7 @@ module CPU_top
             srli_code       = 17'h00089,
             sra_code        = 17'h00030,
             srai_code       = 17'h00091,
+            mulw_code       = 17'h00038,
             stw_code        = 10'h0a6,  
             sth_code        = 10'h0a5,  
             stb_code        = 10'h0a4,  
@@ -104,6 +105,7 @@ module CPU_top
             jirl_inst       = 6'h26,
             nop_inst        = 6'h27,
             halt_inst       = 6'h28,
+            mulw_inst       = 6'h29,
             add_op          = 5'h00,
             addi_op         = 5'h01,
             sub_op          = 5'h02,
@@ -134,6 +136,7 @@ module CPU_top
             bgeu_op         = 5'h1b,
             bl_op           = 5'h1c,
             jirl_op         = 5'h1d,
+            mulw_op         = 5'h1e,
             Offset_len      = 6  ,
             Queue_count_len = 4
 )
@@ -200,7 +203,9 @@ module CPU_top
     reg         mem_write_ID_EX;
     reg         rf_we_ID_EX;
     reg [4:0]   alu_ctrl_ID_EX;
-    
+    reg [5:0]   control_bus_ID_EX_reg;        //用于mul的气泡插入
+    wire        mul_stop;
+
     reg         branch_enable;
     reg [31:0]  alu_src1, alu_src2;
     wire[31:0]  alu_res;
@@ -268,6 +273,7 @@ module CPU_top
     assign word_write = (control_bus_EX_MEM == stw_inst);
     assign i_rinterrupt = branch_enable & ICache_miss & !branch_enable_reg;
     assign load_use_stop = (mem_read_EX_MEM & (rf_src1_ID_EX == rd_EX_MEM | rf_src2_ID_EX == rd_EX_MEM)) | (mem_read_MEM_WB_pipeline1 & (rf_src1_ID_EX == rd_MEM_WB_pipeline1 | rf_src2_ID_EX == rd_MEM_WB_pipeline1)) | (mem_read_MEM_WB_pipeline2 & (rf_src1_ID_EX == rd_MEM_WB_pipeline2 | rf_src2_ID_EX == rd_MEM_WB_pipeline2));
+    assign mul_stop = control_bus_ID_EX == mulw_inst & control_bus_ID_EX_reg != mulw_inst;
     wire   pc_enable;
 
     //计算算术逻辑运算结果
@@ -301,13 +307,15 @@ module CPU_top
       .bltu_op(bltu_op),
       .bgeu_op(bgeu_op),
       .bl_op(bl_op),
-      .jirl_op(jirl_op)
+      .jirl_op(jirl_op),
+      .mulw_op(mulw_op)
     )
     ALU_inst (
       .Op1(alu_src1),
       .Op2(alu_src2),
       .Ctrl(alu_ctrl_ID_EX),
-      .alu_res(alu_res)
+      .alu_res(alu_res),
+      .clk(clk)
     );
 
     //指令地址计数器
@@ -385,6 +393,7 @@ module CPU_top
       .bl_inst(bl_inst),
       .jirl_inst(jirl_inst),
       .nop_inst(nop_inst),
+      .mulw_inst(mulw_inst),
       .add_op(add_op),
       .addi_op(addi_op),
       .sub_op(sub_op),
@@ -414,7 +423,8 @@ module CPU_top
       .bltu_op(bltu_op),
       .bgeu_op(bgeu_op),
       .bl_op(bl_op),
-      .jirl_op(jirl_op)
+      .jirl_op(jirl_op),
+      .mulw_op(mulw_op)
     )
     Control_inst (
       .control_bus(control_bus),
@@ -466,6 +476,7 @@ module CPU_top
       .jirl_code(jirl_code),
       .nop_code(nop_code),
       .halt_code(halt_code),
+      .mulw_code(mulw_code),
       .add_inst(add_inst),
       .addi_inst(addi_inst),
       .sub_inst(sub_inst),
@@ -506,7 +517,8 @@ module CPU_top
       .bl_inst(bl_inst),
       .jirl_inst(jirl_inst),
       .nop_inst(nop_inst),
-      .halt_inst(halt_inst)
+      .halt_inst(halt_inst),
+      .mulw_inst(mulw_inst)
     )
     Decoder_inst (
       .Instruction(instruction_queue[0]),  
@@ -534,7 +546,6 @@ module CPU_top
       .byte_write(byte_write),          
       .half_word_write(half_word_write),
       .word_write(word_write),          
-      .mem_read_valid(mem_read_valid),
       .d_rvalid(d_rvalid),
       .d_wvalid(d_wvalid),
       .d_waddr(d_waddr),
@@ -990,7 +1001,7 @@ module CPU_top
       end
       else begin
         if(!DCache_miss) begin  //执行跳转指令后，跳转指令和两个阶段的空指令往下流，毕竟跳转指令还是有写入寄存器堆的情况(如bl指令)
-          control_bus_EX_MEM <= load_use_stop ? nop_inst : control_bus_ID_EX;
+          control_bus_EX_MEM <= load_use_stop | mul_stop ? nop_inst : control_bus_ID_EX;
         end
       end
     end
@@ -1001,7 +1012,7 @@ module CPU_top
       end
       else begin
         if(!DCache_miss) begin
-          alu_res_EX_MEM <= load_use_stop ? 0 : alu_res ;
+          alu_res_EX_MEM <= load_use_stop | mul_stop ? 0 : alu_res ;
         end
       end
     end
@@ -1012,7 +1023,7 @@ module CPU_top
       end
       else begin
         if(!DCache_miss) begin
-          mem_read_EX_MEM <= load_use_stop ? 0 : mem_read_ID_EX;
+          mem_read_EX_MEM <= load_use_stop | mul_stop ? 0 : mem_read_ID_EX;
         end
       end
     end
@@ -1023,7 +1034,7 @@ module CPU_top
       end
       else begin
         if(!DCache_miss) begin
-          rf_we_EX_MEM <= load_use_stop ? 0 : rf_we_ID_EX;
+          rf_we_EX_MEM <= load_use_stop | mul_stop ? 0 : rf_we_ID_EX;
         end
       end
     end
@@ -1056,7 +1067,7 @@ module CPU_top
       end
       else begin
         if(!DCache_miss) begin
-          mem_write_EX_MEM <= load_use_stop ? 0 : mem_write_ID_EX;
+          mem_write_EX_MEM <= load_use_stop | mul_stop ? 0 : mem_write_ID_EX;
         end
       end
     end
@@ -1346,4 +1357,7 @@ module CPU_top
     end
   end
 
+  always @(posedge clk) begin
+    control_bus_ID_EX_reg <= control_bus_ID_EX;
+  end
   endmodule
