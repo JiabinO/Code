@@ -40,8 +40,8 @@ wire flash_we_n;         //Flash写使能信号，低有效
 wire flash_byte_n;       //Flash 8bit模式选择，低有效。在使用flash的16位模式时请设为1
 
 //Windows需要注意路径分隔符的转义，例如"D:\\foo\\bar.bin"
-parameter BASE_RAM_INIT_FILE = "D:\\github_doc\\Code\\Verilog_code\\LoongArch_competition\\master\\asm\\lab2\\base_instruction\\lab2.bin"; //BaseRAM初始化文件，请修改为实际的绝对路径
-parameter EXT_RAM_INIT_FILE = "D:\\github_doc\\Code\\Verilog_code\\LoongArch_competition\\master\\asm\\lab2\\ext_data\\data.bin";    //ExtRAM初始化文件，请修改为实际的绝对路径
+parameter BASE_RAM_INIT_FILE = "D:\\github_doc\\Code\\Verilog_code\\LoongArch_competition\\master\\asm\\supervisor_la\\supervisor_la\\kernel\\test_kernel.bin"; //BaseRAM初始化文件，请修改为实际的绝对路径
+parameter EXT_RAM_INIT_FILE = "/tmp/data.bin";    //ExtRAM初始化文件，请修改为实际的绝对路径
 parameter FLASH_INIT_FILE = "/tmp/kernel.elf";    //Flash初始化文件，请修改为实际的绝对路径
 
 reg [7:0] TxD_data;
@@ -51,24 +51,29 @@ reg [31:0] instruction_list [0:15];
 reg [31:0] instruction_len;
 reg [1:0] circular_count;
 reg [31:0]address;
-`define instruction_len 11
+reg [31:0]RunD_address;
+reg [31:0]RunG_address;
+reg [31:0]instruction_len_times_4;
+`define instruction_len 10
+
 initial begin
     instruction_len = 32'h4;
-    instruction_list[0]  = 32'h0C048002;
-    instruction_list[1]  = 32'h0D048002;
-    instruction_list[2]  = 32'h04800015;
-    instruction_list[3]  = 32'h85808002;    
-    instruction_list[4]  = 32'h8E351000;
-    instruction_list[5]  = 32'hAC018002;
-    instruction_list[6]  = 32'hCD018002;
-    instruction_list[7]  = 32'h8E008029;
-    instruction_list[8]  = 32'h84108002;
-    instruction_list[9]  = 32'h85ECFF5F;
-    instruction_list[10] = 32'h2000004C;
+    instruction_list[0]  = 32'h15002004;
+    instruction_list[1]  = 32'h15008005;
+    instruction_list[2]  = 32'h14006006;
+    instruction_list[3]  = 32'h00101886;    
+    instruction_list[4]  = 32'h2880008c;
+    instruction_list[5]  = 32'h298000ac;
+    instruction_list[6]  = 32'h02801084;
+    instruction_list[7]  = 32'h028010a5;
+    instruction_list[8]  = 32'h5ffff086;
+    instruction_list[9]  = 32'h4c000020;
+    RunD_address = 32'h80100000;
+    RunG_address = 32'h80100000;
+    instruction_len_times_4 = `instruction_len << 2;
 end
 
-//模拟rxd收到 "T"
-async_transmitter #(.ClkFrequency(50000000),.Baud(115200)) async_transmitter_inst (
+async_transmitter #(.ClkFrequency(50000000),.Baud(384000)) async_transmitter_inst (
     .clk(clk_50M),
     .TxD_start(TxD_start),
     .TxD_data(TxD_data),
@@ -76,582 +81,104 @@ async_transmitter #(.ClkFrequency(50000000),.Baud(115200)) async_transmitter_ins
     .TxD_busy(TxD_busy)
   );
 
-assign TxD_start = 0;
-// initial begin
-//     TxD_start = 0;
-//     TxD_data = 8'h0;
-//     instruction_count = 0;
-//     circular_count = 3;
-//     address = 32'h80100000 - 4;
-//     #3350000 
-//     repeat(`instruction_len) begin
-//         TxD_start = 1;
-//         TxD_data = 8'h41;           // A
-//         #20 TxD_start = 0;
+initial begin
+    TxD_start = 0;
+    TxD_data = 8'h0;
+    instruction_count = 0;
+    circular_count = 3;
+    address = 32'h80100000;
+    #1080450                        // 与波特率有关，得测一测，等待串口输入的时间
+    repeat(`instruction_len) begin  // 串口输入用户程序
+        TxD_start = 1;
+        TxD_data = 8'h41;           // A
+        #20 TxD_start = 0;
 
-//         repeat(4) begin             // 地址发送
-//             #95210 TxD_start = 1;
-//             address = address + 4;
-//             circular_count = circular_count + 1;
-//             case(circular_count)
-//                 0: TxD_data = address[7:0];
-//                 1: TxD_data = address[15:8];
-//                 2: TxD_data = address[23:16];
-//                 3: TxD_data = address[31:24];
-//             endcase
-//             #20 TxD_start = 0;
-//         end
+        repeat(4) begin             // 地址发送
+            #32920 TxD_start = 1;   
+            circular_count = circular_count + 1;
+            case(circular_count)
+                0: TxD_data = address[7:0];
+                1: TxD_data = address[15:8];
+                2: TxD_data = address[23:16];
+                3: TxD_data = address[31:24];
+            endcase
+            #20 TxD_start = 0;
+        end
+        address = address + 4;
+
+        repeat(4) begin             // 长度发送
+            #32920 TxD_start = 1;
+            circular_count = circular_count + 1;
+            case(circular_count)
+                0: TxD_data = instruction_len[7:0];
+                1: TxD_data = instruction_len[15:8];
+                2: TxD_data = instruction_len[23:16];
+                3: TxD_data = instruction_len[31:24];
+            endcase
+            #20 TxD_start = 0;
+        end
         
-//         repeat(4) begin
-//             #95210 TxD_start = 1;
-//             address = address + 4;
-//             circular_count = circular_count + 1;
-//             case(circular_count)
-//                 0: TxD_data = instruction_len[7:0];
-//                 1: TxD_data = instruction_len[15:8];
-//                 2: TxD_data = instruction_len[23:16];
-//                 3: TxD_data = instruction_len[31:24];
-//             endcase
-//             #20 TxD_start = 0;
-//         end
-        
-//         repeat(4) begin
-            
-//         end
-//     end
-    
-//     #20 TxD_start = 0;      // A
-//     repeat(12) begin
-        
-//         #20 TxD_start = 0;
-//     end
+        repeat(4) begin             // 指令发送
+            #32920 TxD_start = 1;
+            circular_count = circular_count + 1;
+            case(circular_count)
+                0: TxD_data = instruction_list[instruction_count][7:0];
+                1: TxD_data = instruction_list[instruction_count][15:8];
+                2: TxD_data = instruction_list[instruction_count][23:16];
+                3: TxD_data = instruction_list[instruction_count][31:24];
+            endcase
+            #20 TxD_start = 0;
+        end
 
-    // repeat(10) begin
-    //     #92380 TxD_start = 1;
-    //     #20    TxD_start = 0;
-    //     repeat(12) begin
-    //         #92280 TxD_start = 1;
-    //         #20 TxD_start = 0;
-    //     end
-    // end
-    // repeat(9) begin
-    //     #92380 TxD_start = 1;
-    //     #20 TxD_start = 0;
-    // end
+        #32920 instruction_count = instruction_count + 1;
+    end
 
-    // #3591670 TxD_start = 1;
-    // #20     TxD_start = 0;
+    #32920 TxD_start = 1;
+    TxD_data = 8'h44;               // D 查看用户区间内存
+    #20 TxD_start = 0;
 
-    // repeat(4) begin
-    //     #92280 TxD_start = 1;
-    //     #20 TxD_start = 0;
-    // end
+    repeat(4) begin                 // 长度发送
+        #32920 TxD_start = 1;
+        circular_count = circular_count + 1;
+        case(circular_count)
+            0: TxD_data = RunD_address[7:0];
+            1: TxD_data = RunD_address[15:8];
+            2: TxD_data = RunD_address[23:16];
+            3: TxD_data = RunD_address[31:24];
+        endcase
+        #20 TxD_start = 0;
+    end
 
-// end
+    repeat(4) begin                 // 长度发送
+        #32920 TxD_start = 1;
+        circular_count = circular_count + 1;
+        case(circular_count)
+            0: TxD_data = instruction_len_times_4[7:0];
+            1: TxD_data = instruction_len_times_4[15:8];
+            2: TxD_data = instruction_len_times_4[23:16];
+            3: TxD_data = instruction_len_times_4[31:24];
+        endcase
+        #20 TxD_start = 0;
+    end
 
-// initial begin
-//     TxD_data = 8'h00;
-//     TxD_start = 0;
-//     // 发送字符 'A'
-//     #3350000 TxD_data = 8'h41;  // A
-//     TxD_start = 1;
-//     #20 TxD_start = 0;
-//     #95000  TxD_data = 8'h00;
-//     TxD_start = 1;
-//     #20 TxD_start = 0;
-//     #95000 TxD_data = 8'h00;
-//     TxD_start = 1;
-//     #20 TxD_start = 0;
-//     #95000 TxD_data = 8'h10;
-//     TxD_start = 1;
-//     #20 TxD_start = 0;
-//     #95000 TxD_data = 8'h80;  // 地址
-//     TxD_start = 1;
-//     #20 TxD_start = 0;
+    #1094540 TxD_data = 8'h47;       // G， 时间需要调
+    TxD_start = 1;
+    #20     TxD_start = 0;
 
-//     #95000 TxD_data = 8'h04;
-//     TxD_start = 1;
-//     #20 TxD_start = 0;
-//     #95000 TxD_data = 8'h00;
-//     TxD_start = 1;
-//     #20 TxD_start = 0;
-//     #95000 TxD_data = 8'h00;
-//     TxD_start = 1;
-//     #20 TxD_start = 0;
-//     #95000 TxD_data = 8'h00;  // 长度
-//     TxD_start = 1;
-//     #20 TxD_start = 0;
-//     #95000 TxD_data = 8'h0C;
-//     TxD_start = 1;
-//     #20 TxD_start = 0;
-//     #95000 TxD_data = 8'h04;
-//     TxD_start = 1;
-//     #20 TxD_start = 0;
-//     #95000 TxD_data = 8'h80;
-//     TxD_start = 1;
-//     #20 TxD_start = 0;
-//     #95000 TxD_data = 8'h02;  // 指令1
-//     TxD_start = 1;
-//     #20 TxD_start = 0;
+    repeat(4) begin                 // 用户程序运行地址发送
+        #32920 TxD_start = 1;
+        circular_count = circular_count + 1;
+        case(circular_count)
+            0: TxD_data = RunD_address[7:0];
+            1: TxD_data = RunD_address[15:8];
+            2: TxD_data = RunD_address[23:16];
+            3: TxD_data = RunD_address[31:24];
+        endcase
+        #20 TxD_start = 0;
+    end
 
-//     // 发送字符 'A'
-//     #92380 TxD_data = 8'h41;  // A
-//     TxD_start = 1;
-//     #20 TxD_start = 0;
-//     #95000 TxD_data = 8'h04;
-//     TxD_start = 1;
-//     #20 TxD_start = 0;
-//     #95000 TxD_data = 8'h00;
-//     TxD_start = 1;
-//     #20 TxD_start = 0;
-//     #95000 TxD_data = 8'h10;
-//     TxD_start = 1;
-//     #20 TxD_start = 0;
-//     #95000 TxD_data = 8'h80;  // 地址
-//     TxD_start = 1;
-//     #20 TxD_start = 0;
+end
 
-//     #95000 TxD_data = 8'h04;
-//     TxD_start = 1;
-//     #20 TxD_start = 0;
-//     #95000 TxD_data = 8'h00;
-//     TxD_start = 1;
-//     #20 TxD_start = 0;
-//     #95000 TxD_data = 8'h00;
-//     TxD_start = 1;
-//     #20 TxD_start = 0;
-//     #95000 TxD_data = 8'h00;  // 长度
-//     TxD_start = 1;
-//     #20 TxD_start = 0;
-
-//     #95000 TxD_data = 8'h0D;
-//     TxD_start = 1;
-//     #20 TxD_start = 0;
-//     #95000 TxD_data = 8'h04;
-//     TxD_start = 1;
-//     #20 TxD_start = 0;
-//     #95000 TxD_data = 8'h80;
-//     TxD_start = 1;
-//     #20 TxD_start = 0;
-//     #95000 TxD_data = 8'h02;  // 指令2
-//     TxD_start = 1;
-//     #20 TxD_start = 0;
-
-//     // 发送字符 'A'
-//     #92380 TxD_data = 8'h41;  // A
-//     TxD_start = 1;
-//     #20 TxD_start = 0;
-//     #95000 TxD_data = 8'h08;
-//     TxD_start = 1;
-//     #20 TxD_start = 0;
-//     #95000 TxD_data = 8'h00;
-//     TxD_start = 1;
-//     #20 TxD_start = 0;
-//     #95000 TxD_data = 8'h10;
-//     TxD_start = 1;
-//     #20 TxD_start = 0;
-//     #95000 TxD_data = 8'h80;  // 地址
-//     TxD_start = 1;
-//     #20 TxD_start = 0;
-
-//     #95000 TxD_data = 8'h04;
-//     TxD_start = 1;
-//     #20 TxD_start = 0;
-//     #95000 TxD_data = 8'h00;
-//     TxD_start = 1;
-//     #20 TxD_start = 0;
-//     #95000 TxD_data = 8'h00;
-//     TxD_start = 1;
-//     #20 TxD_start = 0;
-//     #95000 TxD_data = 8'h00;  // 长度
-//     TxD_start = 1;
-//     #20 TxD_start = 0;
-
-//     #95000 TxD_data = 8'h04;
-//     TxD_start = 1;
-//     #20 TxD_start = 0;
-//     #95000 TxD_data = 8'h80;
-//     TxD_start = 1;
-//     #20 TxD_start = 0;
-//     #95000 TxD_data = 8'h00;
-//     TxD_start = 1;
-//     #20 TxD_start = 0;
-//     #95000 TxD_data = 8'h15;  // 指令3
-//     TxD_start = 1;
-//     #20 TxD_start = 0;
-
-//     // 发送字符 'A'
-//     #92380 TxD_data = 8'h41;  // A
-//     TxD_start = 1;
-//     #20 TxD_start = 0;
-//     #95000 TxD_data = 8'h0C;
-//     TxD_start = 1;
-//     #20 TxD_start = 0;
-//     #95000 TxD_data = 8'h00;
-//     TxD_start = 1;
-//     #20 TxD_start = 0;
-//     #95000 TxD_data = 8'h10;
-//     TxD_start = 1;
-//     #20 TxD_start = 0;
-//     #95000 TxD_data = 8'h80;  // 地址
-//     TxD_start = 1;
-//     #20 TxD_start = 0;
-
-//     #95000 TxD_data = 8'h04;
-//     TxD_start = 1;
-//     #20 TxD_start = 0;
-//     #95000 TxD_data = 8'h00;
-//     TxD_start = 1;
-//     #20 TxD_start = 0;
-//     #95000 TxD_data = 8'h00;
-//     TxD_start = 1;
-//     #20 TxD_start = 0;
-//     #95000 TxD_data = 8'h00;  // 长度
-//     TxD_start = 1;
-//     #20 TxD_start = 0;
-
-//     #95000 TxD_data = 8'h85;
-//     TxD_start = 1;
-//     #20 TxD_start = 0;
-//     #95000 TxD_data = 8'h80;
-//     TxD_start = 1;
-//     #20 TxD_start = 0;
-//     #95000 TxD_data = 8'h80;
-//     TxD_start = 1;
-//     #20 TxD_start = 0;
-//     #95000 TxD_data = 8'h02;  // 指令4
-//     TxD_start = 1;
-//     #20 TxD_start = 0;
-
-//     // 发送字符 'A'
-//     #92380 TxD_data = 8'h41;  // A
-//     TxD_start = 1;
-//     #20 TxD_start = 0;
-//     #95000 TxD_data = 8'h10;
-//     TxD_start = 1;
-//     #20 TxD_start = 0;
-//     #95000 TxD_data = 8'h00;
-//     TxD_start = 1;
-//     #20 TxD_start = 0;
-//     #95000 TxD_data = 8'h10;
-//     TxD_start = 1;
-//     #20 TxD_start = 0;
-//     #95000 TxD_data = 8'h80;  // 地址
-//     TxD_start = 1;
-//     #20 TxD_start = 0;
-
-//     #95000 TxD_data = 8'h04;
-//     TxD_start = 1;
-//     #20 TxD_start = 0;
-//     #95000 TxD_data = 8'h00;
-//     TxD_start = 1;
-//     #20 TxD_start = 0;
-//     #95000 TxD_data = 8'h00;
-//     TxD_start = 1;
-//     #20 TxD_start = 0;
-//     #95000 TxD_data = 8'h00;  // 长度
-//     TxD_start = 1;
-//     #20 TxD_start = 0;
-
-//     #95000 TxD_data = 8'h8E;
-//     TxD_start = 1;
-//     #20 TxD_start = 0;
-//     #95000 TxD_data = 8'h35;
-//     TxD_start = 1;
-//     #20 TxD_start = 0;
-//     #95000 TxD_data = 8'h10;
-//     TxD_start = 1;
-//     #20 TxD_start = 0;
-//     #95000 TxD_data = 8'h00;  // 指令5
-//     TxD_start = 1;
-//     #20 TxD_start = 0;
-
-//     // 发送字符 'A'
-//     #92380 TxD_data = 8'h41;  // A
-//     TxD_start = 1;
-//     #20 TxD_start = 0;
-//     #95000 TxD_data = 8'h14;
-//     TxD_start = 1;
-//     #20 TxD_start = 0;
-//     #95000 TxD_data = 8'h00;
-//     TxD_start = 1;
-//     #20 TxD_start = 0;
-//     #95000 TxD_data = 8'h10;
-//     TxD_start = 1;
-//     #20 TxD_start = 0;
-//     #95000 TxD_data = 8'h80;  // 地址
-//     TxD_start = 1;
-//     #20 TxD_start = 0;
-
-//     #95000 TxD_data = 8'h04;
-//     TxD_start = 1;
-//     #20 TxD_start = 0;
-//     #95000 TxD_data = 8'h00;
-//     TxD_start = 1;
-//     #20 TxD_start = 0;
-//     #95000 TxD_data = 8'h00;
-//     TxD_start = 1;
-//     #20 TxD_start = 0;
-//     #95000 TxD_data = 8'h00;  // 长度
-//     TxD_start = 1;
-//     #20 TxD_start = 0;
-
-//     #95000 TxD_data = 8'hAC;
-//     TxD_start = 1;
-//     #20 TxD_start = 0;
-//     #95000 TxD_data = 8'h01;
-//     TxD_start = 1;
-//     #20 TxD_start = 0;
-//     #95000 TxD_data = 8'h80;
-//     TxD_start = 1;
-//     #20 TxD_start = 0;
-//     #95000 TxD_data = 8'h02;  // 指令6
-//     TxD_start = 1;
-//     #20 TxD_start = 0;
-
-//     // 发送字符 'A'
-//     #92380 TxD_data = 8'h41;  // A
-//     TxD_start = 1;
-//     #20 TxD_start = 0;
-//     #95000 TxD_data = 8'h18;
-//     TxD_start = 1;
-//     #20 TxD_start = 0;
-//     #95000 TxD_data = 8'h00;
-//     TxD_start = 1;
-//     #20 TxD_start = 0;
-//     #95000 TxD_data = 8'h10;
-//     TxD_start = 1;
-//     #20 TxD_start = 0;
-//     #95000 TxD_data = 8'h80;  // 地址
-//     TxD_start = 1;
-//     #20 TxD_start = 0;
-
-//     #95000 TxD_data = 8'h04;
-//     TxD_start = 1;
-//     #20 TxD_start = 0;
-//     #95000 TxD_data = 8'h00;
-//     TxD_start = 1;
-//     #20 TxD_start = 0;
-//     #95000 TxD_data = 8'h00;
-//     TxD_start = 1;
-//     #20 TxD_start = 0;
-//     #95000 TxD_data = 8'h00;  // 长度
-//     TxD_start = 1;
-//     #20 TxD_start = 0;
-
-//     #95000 TxD_data = 8'hCD;
-//     TxD_start = 1;
-//     #20 TxD_start = 0;
-//     #95000 TxD_data = 8'h01;
-//     TxD_start = 1;
-//     #20 TxD_start = 0;
-//     #95000 TxD_data = 8'h80;
-//     TxD_start = 1;
-//     #20 TxD_start = 0;
-//     #95000 TxD_data = 8'h02;  // 指令7
-//     TxD_start = 1;
-//     #20 TxD_start = 0;
-
-//     // 发送字符 'A'
-//     #92380 TxD_data = 8'h41;  // A
-//     TxD_start = 1;
-//     #20 TxD_start = 0;
-//     #95000 TxD_data = 8'h1C;
-//     TxD_start = 1;
-//     #20 TxD_start = 0;
-//     #95000 TxD_data = 8'h00;
-//     TxD_start = 1;
-//     #20 TxD_start = 0;
-//     #95000 TxD_data = 8'h10;
-//     TxD_start = 1;
-//     #20 TxD_start = 0;
-//     #95000 TxD_data = 8'h80;  // 地址
-//     TxD_start = 1;
-//     #20 TxD_start = 0;
-
-//     #95000 TxD_data = 8'h04;
-//     TxD_start = 1;
-//     #20 TxD_start = 0;
-//     #95000 TxD_data = 8'h00;
-//     TxD_start = 1;
-//     #20 TxD_start = 0;
-//     #95000 TxD_data = 8'h00;
-//     TxD_start = 1;
-//     #20 TxD_start = 0;
-//     #95000 TxD_data = 8'h00;  // 长度
-//     TxD_start = 1;
-//     #20 TxD_start = 0;
-
-//     #95000 TxD_data = 8'h8E;
-//     TxD_start = 1;
-//     #20 TxD_start = 0;
-//     #95000 TxD_data = 8'h00;
-//     TxD_start = 1;
-//     #20 TxD_start = 0;
-//     #95000 TxD_data = 8'h80;
-//     TxD_start = 1;
-//     #20 TxD_start = 0;
-//     #95000 TxD_data = 8'h29;  // 指令8
-//     TxD_start = 1;
-//     #20 TxD_start = 0;
-
-//     // 发送字符 'A'
-//     #92380 TxD_data = 8'h41;  // A
-//     TxD_start = 1;
-//     #20 TxD_start = 0;
-//     #95000 TxD_data = 8'h20;
-//     TxD_start = 1;
-//     #20 TxD_start = 0;
-//     #95000 TxD_data = 8'h00;
-//     TxD_start = 1;
-//     #20 TxD_start = 0;
-//     #95000 TxD_data = 8'h10;
-//     TxD_start = 1;
-//     #20 TxD_start = 0;
-//     #95000 TxD_data = 8'h80;  // 地址
-//     TxD_start = 1;
-//     #20 TxD_start = 0;
-
-//     #95000 TxD_data = 8'h04;
-//     TxD_start = 1;
-//     #20 TxD_start = 0;
-//     #95000 TxD_data = 8'h00;
-//     TxD_start = 1;
-//     #20 TxD_start = 0;
-//     #95000 TxD_data = 8'h00;
-//     TxD_start = 1;
-//     #20 TxD_start = 0;
-//     #95000 TxD_data = 8'h00;  // 长度
-//     TxD_start = 1;
-//     #20 TxD_start = 0;
-
-//     #95000 TxD_data = 8'h84;
-//     TxD_start = 1;
-//     #20 TxD_start = 0;
-//     #95000 TxD_data = 8'h10;
-//     TxD_start = 1;
-//     #20 TxD_start = 0;
-//     #95000 TxD_data = 8'h80;
-//     TxD_start = 1;
-//     #20 TxD_start = 0;
-//     #95000 TxD_data = 8'h02;  // 指令9
-//     TxD_start = 1;
-//     #20 TxD_start = 0;
-
-//     // 发送字符 'A'
-//     #92380 TxD_data = 8'h41;  // A
-//     TxD_start = 1;
-//     #20 TxD_start = 0;
-//     #95000 TxD_data = 8'h24;
-//     TxD_start = 1;
-//     #20 TxD_start = 0;
-//     #95000 TxD_data = 8'h00;
-//     TxD_start = 1;
-//     #20 TxD_start = 0;
-//     #95000 TxD_data = 8'h10;
-//     TxD_start = 1;
-//     #20 TxD_start = 0;
-//     #95000 TxD_data = 8'h80;  // 地址
-//     TxD_start = 1;
-//     #20 TxD_start = 0;
-
-//     #95000 TxD_data = 8'h04;
-//     TxD_start = 1;
-//     #20 TxD_start = 0;
-//     #95000 TxD_data = 8'h00;
-//     TxD_start = 1;
-//     #20 TxD_start = 0;
-//     #95000 TxD_data = 8'h00;
-//     TxD_start = 1;
-//     #20 TxD_start = 0;
-//     #95000 TxD_data = 8'h00;  // 长度
-//     TxD_start = 1;
-//     #20 TxD_start = 0;
-
-//     #95000 TxD_data = 8'h85;
-//     TxD_start = 1;
-//     #20 TxD_start = 0;
-//     #95000 TxD_data = 8'hEC;
-//     TxD_start = 1;
-//     #20 TxD_start = 0;
-//     #95000 TxD_data = 8'hFF;
-//     TxD_start = 1;
-//     #20 TxD_start = 0;
-//     #95000 TxD_data = 8'h5F;  // 指令10
-//     TxD_start = 1;
-//     #20 TxD_start = 0;
-
-//     // 发送字符 'A'
-//     #92380 TxD_data = 8'h41;  // A
-//     TxD_start = 1;
-//     #20 TxD_start = 0;
-//     #95000 TxD_data = 8'h28;
-//     TxD_start = 1;
-//     #20 TxD_start = 0;
-//     #95000 TxD_data = 8'h00;
-//     TxD_start = 1;
-//     #20 TxD_start = 0;
-//     #95000 TxD_data = 8'h10;
-//     TxD_start = 1;
-//     #20 TxD_start = 0;
-//     #95000 TxD_data = 8'h80;  // 地址
-//     TxD_start = 1;
-//     #20 TxD_start = 0;
-    
-//     #95000 TxD_data = 8'h04;
-//     TxD_start = 1;
-//     #20 TxD_start = 0;
-//     #95000 TxD_data = 8'h00;
-//     TxD_start = 1;
-//     #20 TxD_start = 0;
-//     #95000 TxD_data = 8'h00;
-//     TxD_start = 1;
-//     #20 TxD_start = 0;
-//     #95000 TxD_data = 8'h00;  // 长度
-//     TxD_start = 1;
-//     #20 TxD_start = 0;
-
-//     #95000 TxD_data = 8'h20;
-//     TxD_start = 1;
-//     #20 TxD_start = 0;
-//     #95000 TxD_data = 8'h00;
-//     TxD_start = 1;
-//     #20 TxD_start = 0;
-//     #95000 TxD_data = 8'h00;
-//     TxD_start = 1;
-//     #20 TxD_start = 0;
-//     #95000 TxD_data = 8'h4c;  // 指令11
-//     TxD_start = 1;
-//     #20 TxD_start = 0;
-
-//     #92380 TxD_data = 8'h44;  // D
-//     TxD_start = 1;
-//     #20 TxD_start = 0;
-//     #95000 TxD_data = 8'h00;
-//     TxD_start = 1;
-//     #20 TxD_start = 0;
-//     #95000 TxD_data = 8'h00;
-//     TxD_start = 1;
-//     #20 TxD_start = 0;
-//     #95000 TxD_data = 8'h10;
-//     TxD_start = 1;
-//     #20 TxD_start = 0;
-//     #95000 TxD_data = 8'h80;  // 地址
-//     TxD_start = 1;
-//     #20 TxD_start = 0;
-
-//     #95000 TxD_data = 8'h2c;
-//     TxD_start = 1;
-//     #20 TxD_start = 0;
-//     #95000 TxD_data = 8'h00;
-//     TxD_start = 1;
-//     #20 TxD_start = 0;
-//     #95000 TxD_data = 8'h00;
-//     TxD_start = 1;
-//     #20 TxD_start = 0;
-//     #95000 TxD_data = 8'h00;  // 长度
-//     TxD_start = 1;
-//     #20 TxD_start = 0;
 
 //     #3958950 TxD_data = 8'h47;// G
 //     TxD_start = 1;

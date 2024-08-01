@@ -15,5 +15,5 @@ Disassembly of section .text:
 10000014:	298000ac 	st.w	$r12,$r5,0          # mem[80400000] <- 15002004
 10000018:	02801084 	addi.w	$r4,$r4,4(0x4)      # r4 = 80100004
 1000001c:	028010a5 	addi.w	$r5,$r5,4(0x4)      # r5 = 80400004
-10000020:	5ffff086 	bne	$r4,$r6,-16(0x3fff0) # 10000010 <stream_next>
+10000020:	5ffff086 	bne	$r4,$r6,-16(0x3fff0)    # 10000010 <stream_next>
 10000024:	4c000020 	jirl	$r0,$r1,0

@@ -94,7 +94,7 @@ module Arbiter
     reg ext_uart_clear;                                   // 清除rxd数据有效信号
     reg ext_uart_start, ext_uart_avai;                    // txd发送开始信号， 串口数据读和写寄存器数据可用状态（针对rxd，对txd没用）
 
-    async_receiver #(.ClkFrequency(50000000),.Baud(9600)) //接收模块，9600无检验位
+    async_receiver #(.ClkFrequency(50000000),.Baud(384000)) //接收模块，9600无检验位
     ext_uart_r(
         .clk(clk),                        //外部时钟信号
         .RxD(rxd),                        //外部串行信号输入
@@ -146,7 +146,7 @@ module Arbiter
         end
     end
     
-    async_transmitter #(.ClkFrequency(50000000),.Baud(9600)) //发送模块，9600无检验位
+    async_transmitter #(.ClkFrequency(50000000),.Baud(384000)) //发送模块，9600无检验位
     ext_uart_t(
         .clk(clk),                    //外部时钟信号
         .TxD(txd),                    //串行信号输出
@@ -420,11 +420,8 @@ module Arbiter
             Base_we <= 0;
         end
         else begin  //写请求时才对存储器进行写
-            if( ((state == 0 && !i_rvalid_reg_hold && !d_rvalid_reg_hold)   || 
-                (state == 1 && buf_shift_count == 0 && !d_rvalid_reg_hold)  || 
-                (state == 2 && buf_shift_count == 0 && !i_rvalid_reg_hold)) &&
-                d_wvalid_reg_hold)  begin
-                if(!(d_waddr == 32'hbfd003fc0)) begin   // 3820650
+            if(state == 3 && buf_shift_count != 0)  begin
+                if(!(d_waddr == 32'hbfd003c0)) begin   
                     if(d_waddr[22]) begin
                         Ext_we <= 1;
                     end
