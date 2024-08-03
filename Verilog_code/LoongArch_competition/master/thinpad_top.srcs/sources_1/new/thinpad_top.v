@@ -326,7 +326,7 @@ CPU_top # (
     .Queue_count_len(Queue_count_len)
         )
   CPU_top_inst (
-    .clk(clk_50M),
+    .clk(clk_10M),
     .rstn(!reset_btn),
     .base_ram_data(base_ram_data),
     .base_ram_addr(base_ram_addr),
