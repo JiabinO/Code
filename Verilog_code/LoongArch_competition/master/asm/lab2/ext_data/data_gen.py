@@ -1,4 +1,5 @@
-# 生成的汇编文件名
+import random
+
 filename = "ext_data.s"
 
 with open(filename, 'w') as f:
@@ -6,12 +7,11 @@ with open(filename, 'w') as f:
     f.write(".org 0x0\n")
     f.write(".global _start\n")
 
-    # 生成从0x80400000到0x807fffff，每次加4的.int指令
-    start = 0x80400000
-    end = 0x807fffff
-    step = 4
+    # 生成随机数并写入.int指令
+    num_entries = (0x807fffff - 0x80400000) // 4 + 1
 
-    for i in range(start, end + 1, step):
-        f.write(f".int 0x{i:08x}\n")
+    for _ in range(num_entries):
+        random_value = random.randint(0, 0xFFFFFFFF)
+        f.write(f".int 0x{random_value:08x}\n")
 
 print(f"汇编代码已生成并保存在 {filename} 文件中。")

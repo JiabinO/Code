@@ -85,7 +85,7 @@ initial begin
     instruction_list[0 ]  = 32'h15008004;
     instruction_list[1 ]  = 32'h15008205;
     instruction_list[2 ]  = 32'h15008406;
-    instruction_list[3 ]  = 32'h03800807;
+    instruction_list[3 ]  = 32'h03801007;
     instruction_list[4 ]  = 32'h00150014;
     instruction_list[5 ]  = 32'h58006e87;
     instruction_list[6 ]  = 32'h00408a8c;

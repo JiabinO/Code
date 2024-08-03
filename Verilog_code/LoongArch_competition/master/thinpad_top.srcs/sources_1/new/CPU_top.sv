@@ -164,7 +164,6 @@ module CPU_top
         output reg txd
     );
 
-    reg [31:0]  exe_instruction_count;
     wire [31:0] pc;
     wire        load_use_stop;
     reg         load_use_stop_reg;
@@ -203,7 +202,7 @@ module CPU_top
     reg         mem_write_ID_EX;
     reg         rf_we_ID_EX;
     reg [4:0]   alu_ctrl_ID_EX;
-    reg [5:0]   control_bus_ID_EX_reg;        //用于mul的气泡插入
+    reg         mul_enable;
     wire        mul_stop;
 
     reg         branch_enable;
@@ -273,7 +272,8 @@ module CPU_top
     assign word_write = (control_bus_EX_MEM == stw_inst);
     assign i_rinterrupt = branch_enable & ICache_miss & !branch_enable_reg;
     assign load_use_stop = (mem_read_EX_MEM & (rf_src1_ID_EX == rd_EX_MEM | rf_src2_ID_EX == rd_EX_MEM)) | (mem_read_MEM_WB_pipeline1 & (rf_src1_ID_EX == rd_MEM_WB_pipeline1 | rf_src2_ID_EX == rd_MEM_WB_pipeline1)) | (mem_read_MEM_WB_pipeline2 & (rf_src1_ID_EX == rd_MEM_WB_pipeline2 | rf_src2_ID_EX == rd_MEM_WB_pipeline2));
-    assign mul_stop = control_bus_ID_EX == mulw_inst & control_bus_ID_EX_reg != mulw_inst;
+    
+    assign mul_stop = control_bus_ID_EX == mulw_inst & !mul_enable ;
     wire   pc_enable;
 
     //计算算术逻辑运算结果
@@ -770,7 +770,7 @@ module CPU_top
         control_bus_ID_EX <= nop_inst;
       end
       else begin
-        if(!DCache_miss & !load_use_stop) begin  //命中
+        if(!DCache_miss & !load_use_stop & !mul_stop) begin  //命中
           if(task_count == 0 | branch_enable) begin //任务数
             control_bus_ID_EX <= nop_inst;
           end
@@ -786,7 +786,7 @@ module CPU_top
         mem_read_ID_EX <= 0;
       end 
       else begin
-        if(!DCache_miss & !load_use_stop) begin
+        if(!DCache_miss & !load_use_stop & !mul_stop) begin
           if(task_count == 0 | branch_enable) begin
             mem_read_ID_EX <= 0;
           end
@@ -802,7 +802,7 @@ module CPU_top
         mem_write_ID_EX <= 0;
       end 
       else begin
-        if(!DCache_miss & !load_use_stop) begin
+        if(!DCache_miss & !load_use_stop & !mul_stop) begin
           if(task_count == 0 | branch_enable) begin
             mem_write_ID_EX <= 0;
           end
@@ -818,7 +818,7 @@ module CPU_top
         rf_src1_ID_EX <= 0;
       end
       else begin
-        if(!DCache_miss & !load_use_stop) begin
+        if(!DCache_miss & !load_use_stop & !mul_stop) begin
           if(task_count == 0 | branch_enable) begin
             rf_src1_ID_EX <= 0;
           end
@@ -834,7 +834,7 @@ module CPU_top
         rf_src2_ID_EX <= 0;
       end
       else begin
-        if(!DCache_miss & !load_use_stop) begin
+        if(!DCache_miss & !load_use_stop & !mul_stop) begin
           if(task_count == 0 | branch_enable) begin
             rf_src2_ID_EX <= 0;
           end
@@ -850,7 +850,7 @@ module CPU_top
         rd_ID_EX <= 0;
       end
       else begin
-        if(!DCache_miss & !load_use_stop) begin
+        if(!DCache_miss & !load_use_stop & !mul_stop) begin
           if(task_count == 0 | branch_enable) begin
             rd_ID_EX <= 0;
           end
@@ -866,7 +866,7 @@ module CPU_top
         imm_ID_EX <= 0;
       end
       else begin
-        if(!DCache_miss & !load_use_stop) begin
+        if(!DCache_miss & !load_use_stop & !mul_stop) begin
           if(task_count == 0 | branch_enable) begin
             imm_ID_EX <= 0;
           end
@@ -882,7 +882,7 @@ module CPU_top
         rf_src1_rdata_ID_EX <= 0;
       end
       else begin
-        if(!DCache_miss & !load_use_stop) begin
+        if(!DCache_miss & !load_use_stop & !mul_stop) begin
           if(task_count == 0 | branch_enable) begin
             rf_src1_rdata_ID_EX <= 0;
           end
@@ -917,7 +917,7 @@ module CPU_top
         rf_src2_rdata_ID_EX <= 0;
       end
       else begin
-        if(!DCache_miss & !load_use_stop) begin
+        if(!DCache_miss & !load_use_stop & !mul_stop) begin
           if(task_count == 0 | branch_enable) begin
             rf_src2_rdata_ID_EX <= 0;
           end
@@ -952,7 +952,7 @@ module CPU_top
         rf_we_ID_EX <= 0;
       end
       else begin
-        if(!DCache_miss & !load_use_stop) begin
+        if(!DCache_miss & !load_use_stop & !mul_stop) begin
           if(task_count == 0 | branch_enable) begin
             rf_we_ID_EX <= 0;
           end
@@ -968,7 +968,7 @@ module CPU_top
         alu_ctrl_ID_EX <= 0;
       end
       else begin
-        if(!DCache_miss & !load_use_stop) begin
+        if(!DCache_miss & !load_use_stop & !mul_stop) begin
           if(task_count == 0 | branch_enable) begin
             alu_ctrl_ID_EX <= 0;
           end
@@ -984,7 +984,7 @@ module CPU_top
         pc_ID_EX <= 0;
       end
       else begin
-        if(!DCache_miss & !load_use_stop) begin
+        if(!DCache_miss & !load_use_stop & !mul_stop) begin
           if(task_count == 0 | branch_enable) begin
             pc_ID_EX <= 0;
           end
@@ -995,6 +995,21 @@ module CPU_top
       end
     end
     
+    always @(posedge clk) begin
+      if(!rstn) begin
+        mul_enable <= 0;
+      end
+      else begin
+        if(!DCache_miss & !load_use_stop) begin
+          if(control_bus_ID_EX == mulw_inst) begin
+            mul_enable <= 1;
+          end
+          else if(mul_enable) begin
+            mul_enable <= 0;
+          end
+        end
+      end
+    end
 
     //EX_MEM
     always @(posedge clk) begin
@@ -1003,7 +1018,7 @@ module CPU_top
       end
       else begin
         if(!DCache_miss) begin  //执行跳转指令后，跳转指令和两个阶段的空指令往下流，毕竟跳转指令还是有写入寄存器堆的情况(如bl指令)
-          control_bus_EX_MEM <= load_use_stop ? nop_inst : control_bus_ID_EX;
+          control_bus_EX_MEM <= load_use_stop | mul_stop ? nop_inst : control_bus_ID_EX;
         end
       end
     end
@@ -1014,7 +1029,7 @@ module CPU_top
       end
       else begin
         if(!DCache_miss) begin
-          alu_res_EX_MEM <= load_use_stop ? 0 : alu_res ;
+          alu_res_EX_MEM <= load_use_stop | mul_stop ? 0 : alu_res ;
         end
       end
     end
@@ -1025,7 +1040,7 @@ module CPU_top
       end
       else begin
         if(!DCache_miss) begin
-          mem_read_EX_MEM <= load_use_stop ? 0 : mem_read_ID_EX;
+          mem_read_EX_MEM <= load_use_stop | mul_stop ? 0 : mem_read_ID_EX;
         end
       end
     end
@@ -1036,7 +1051,7 @@ module CPU_top
       end
       else begin
         if(!DCache_miss) begin
-          rf_we_EX_MEM <= load_use_stop ? 0 : rf_we_ID_EX;
+          rf_we_EX_MEM <= load_use_stop | mul_stop ? 0 : rf_we_ID_EX;
         end
       end
     end
@@ -1069,7 +1084,7 @@ module CPU_top
       end
       else begin
         if(!DCache_miss) begin
-          mem_write_EX_MEM <= load_use_stop ? 0 : mem_write_ID_EX;
+          mem_write_EX_MEM <= load_use_stop | mul_stop ? 0 : mem_write_ID_EX;
         end
       end
     end
@@ -1170,18 +1185,18 @@ module CPU_top
           if(task_count == 0 & !ICache_miss & ~|branch_count) begin  
             task_count <= 1;
           end
-          else if(task_count == (1 << Queue_count_len) - 1 && !DCache_miss & !load_use_stop) begin
+          else if(task_count == (1 << Queue_count_len) - 1 && !DCache_miss & !load_use_stop & !mul_stop) begin
             task_count <= task_count - 1;
           end
-          else if((!ICache_miss & !DCache_miss & !load_use_stop) | (ICache_miss & load_use_stop & !DCache_miss)) begin
+          else if((!ICache_miss & !DCache_miss & !load_use_stop & !mul_stop) | (ICache_miss & (load_use_stop | mul_stop) & !DCache_miss) | (ICache_miss & DCache_miss)) begin
             task_count <= task_count;
           end
-          else if(ICache_miss & !DCache_miss & !load_use_stop) begin
+          else if(ICache_miss & !DCache_miss & !load_use_stop & !mul_stop) begin
             if(task_count > 0) begin
               task_count <= task_count - 1;
             end
           end
-          else if(!ICache_miss & (DCache_miss | (!DCache_miss & DCache_miss_reg) | load_use_stop) & ~|branch_count) begin
+          else if(!ICache_miss & (DCache_miss | (!DCache_miss & DCache_miss_reg) | load_use_stop | mul_stop) & ~|branch_count) begin
             if(task_count < (1 << Queue_count_len) - 1) begin
               task_count <= task_count + 1;
             end
@@ -1193,7 +1208,7 @@ module CPU_top
 
     always @(posedge clk) begin 
       integer i;
-      if(!rstn | (branch_enable & !load_use_stop)) begin
+      if(!rstn | (branch_enable & !load_use_stop & !mul_stop)) begin
         for(i = 0; i < (1 << Queue_count_len); i++) begin
           instruction_queue[i] <= 0;
         end
@@ -1202,20 +1217,20 @@ module CPU_top
         if(!ICache_miss & task_count == 0) begin
           instruction_queue[task_count] <= ICache_rdata;
         end
-        else if(!ICache_miss & !DCache_miss & !load_use_stop) begin 
+        else if(!ICache_miss & !DCache_miss & !load_use_stop & !mul_stop) begin 
           for(i = 0; i < task_count - 1; i++) begin
             instruction_queue[i] <= instruction_queue[i + 1];
           end
           instruction_queue[task_count - 1] <= ICache_rdata;
         end
-        else if(ICache_miss & !DCache_miss & !load_use_stop) begin //ICache_miss 
+        else if(ICache_miss & !DCache_miss & !load_use_stop & !mul_stop) begin //ICache_miss 
           if(task_count > 0) begin
             for(i = 0; i < task_count - 1; i++) begin
               instruction_queue[i] <= instruction_queue[i + 1];
             end
           end
         end
-        else if(!ICache_miss & (DCache_miss | (!DCache_miss & DCache_miss_reg) | load_use_stop) & ~|branch_count) begin
+        else if(!ICache_miss & (DCache_miss | (!DCache_miss & DCache_miss_reg) | load_use_stop | mul_stop) & ~|branch_count) begin
           if(task_count < (1 << Queue_count_len) - 1) begin
             instruction_queue[task_count] <= ICache_rdata;
           end
@@ -1225,7 +1240,7 @@ module CPU_top
     
     always @(posedge clk) begin
       integer i;
-      if(!rstn | (branch_enable & !load_use_stop)) begin     //branch时丢弃延迟槽所有的指令对应的pc
+      if(!rstn | (branch_enable & !load_use_stop & !mul_stop)) begin     //branch时丢弃延迟槽所有的指令对应的pc
         for(i = 0; i < (1 << Queue_count_len); i++) begin
           instruction_pc_queue[i] <= 0;
         end
@@ -1234,20 +1249,20 @@ module CPU_top
         if(!ICache_miss & task_count == 0) begin
           instruction_pc_queue[task_count] <= instruction_pc;
         end
-        else if(!ICache_miss & !DCache_miss & !load_use_stop) begin 
+        else if(!ICache_miss & !DCache_miss & !load_use_stop & !mul_stop) begin 
           for(i = 0; i < task_count - 1; i++) begin
             instruction_pc_queue[i] <= instruction_pc_queue[i + 1];
           end
           instruction_pc_queue[task_count - 1] <= instruction_pc;
         end
-        else if(ICache_miss & !DCache_miss & !load_use_stop) begin //ICache_miss 
+        else if(ICache_miss & !DCache_miss & !load_use_stop & !mul_stop) begin //ICache_miss 
           if(task_count > 0) begin
             for(i = 0; i < task_count - 1; i++) begin
               instruction_pc_queue[i] <= instruction_pc_queue[i + 1];
             end
           end
         end
-        else if(!ICache_miss & (DCache_miss | (!DCache_miss & DCache_miss_reg) | load_use_stop)) begin
+        else if(!ICache_miss & (DCache_miss | (!DCache_miss & DCache_miss_reg) | load_use_stop | mul_stop)) begin
           if(task_count < (1 << Queue_count_len) - 1) begin
             instruction_pc_queue[task_count] <= instruction_pc;
           end
@@ -1323,17 +1338,6 @@ module CPU_top
     load_use_stop_reg <= load_use_stop;
   end
 
-  always @(posedge clk) begin
-    if(!rstn) begin
-      exe_instruction_count <= 0;
-    end
-    else begin
-      if(control_bus_MEM_WB != nop_inst) begin
-        exe_instruction_count <= exe_instruction_count + 1;
-      end
-    end
-  end
-
   always @(*) begin
     if (rf_src1_ID_EX == 0) begin
       rj_rdata_ID_EX_mux = 0;
@@ -1359,9 +1363,5 @@ module CPU_top
     end
   end
 
-  always @(posedge clk) begin
-    if(!load_use_stop) begin
-      control_bus_ID_EX_reg <= control_bus_ID_EX;
-    end
-  end
+
   endmodule

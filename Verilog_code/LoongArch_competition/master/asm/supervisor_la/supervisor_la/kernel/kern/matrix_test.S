@@ -5,7 +5,7 @@ _start:
     li.w        $a0, 0x80400000
     li.w        $a1, 0x80410000
     li.w        $a2, 0x80420000
-    li.w        $a3, 2
+    li.w        $a3, 4
     or          $t8,$zero,$zero
 loop1:
     beq         $t8,$a3,loop1end

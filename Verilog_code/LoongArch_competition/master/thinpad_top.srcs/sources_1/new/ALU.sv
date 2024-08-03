@@ -71,14 +71,14 @@ module ALU
     wire [31:0] mul_h_result            =   mul_res[63:32]; //高32位乘法结果
     wire        adder_cout;
 
-    assign mul_res = $signed(Op1) * $signed(Op2);
+    // assign mul_res = $signed(Op1) * $signed(Op2);
 
-    // multiplier  multiplier_inst (
-    //     .a(Op1),
-    //     .b(Op2),
-    //     .clk(clk),
-    //     .mul_res(mul_res)
-    // );
+    multiplier  multiplier_inst (
+        .a(Op1),
+        .b(Op2),
+        .clk(clk),
+        .mul_res(mul_res)           // 15377710
+    );
 
     assign {adder_cout, adder_result}   =   Op1 + ( Ctrl == sub_op      |
                                                     Ctrl == slt_op      | 
