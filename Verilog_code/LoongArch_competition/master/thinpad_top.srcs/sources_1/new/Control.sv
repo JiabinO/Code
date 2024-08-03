@@ -96,13 +96,9 @@ module Control
     )
     (
         input       [5:0]   control_bus,        //译码输出对应命令编码
-        // input               branch_enable,
         output reg  [4:0]   alu_ctrl,           //alu操作控制
-        // output reg  [2:0]   branch_type,        //跳转类型
         output reg          mem_read,           //读信号，有效时可以暂时性地改变内存读地址
         output reg          mem_write,          //内存写使能
-        // output reg          mem_to_reg,         //选择写回reg的数据，数据来源有alu、mem
-        // output reg          alu_src1, alu_src2, //alu的Op1、Op2数据来源选择线，Op1:rj、pc, Op2:rk、imm32
         output reg          rf_write            //寄存器堆写使能
     );  
 

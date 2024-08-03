@@ -8,17 +8,17 @@
 module ICache
     #(parameter Offset_len = 6)
     (
-        input                                       clk, rstn,
-        input      [31:0]                           ICache_addr,
-        input      [(1 << (3 + Offset_len)) - 1:0]  mem_rdata,
-        input                                       i_rready,
-        input                                       branch_enable,
-        input                                       task_full,
-        output reg                                  ICache_miss,
-        output reg [31:0]                           ICache_rdata,
-        output reg [31:0]                           i_addr,
-        output reg                                  i_rvalid,
-        output reg [31:0]                           instruction_pc
+        input                                       clk, rstn,          // 时钟信号， 低电平初始化信号
+        input      [31:0]                           ICache_addr,        // 取指的pc
+        input      [(1 << (3 + Offset_len)) - 1:0]  mem_rdata,          // 通过仲裁器获取的内存数据
+        input                                       i_rready,           // 仲裁器读就绪
+        input                                       branch_enable,      // cpu指令执行跳转
+        input                                       task_full,          // 任务队列任务数已满标志
+        output reg                                  ICache_miss,        // 指令缓存未命中信号
+        output reg [31:0]                           ICache_rdata,       // 缓存读取的数据
+        output reg [31:0]                           i_addr,             // 发送给仲裁器的读地址
+        output reg                                  i_rvalid,           // 发送给仲裁器的读请求有效
+        output reg [31:0]                           instruction_pc      // 读出指令对应的pc
     );
 
     //容量为8KB, 两路组相连，每路4KB = 2^(Offset_len-2) 字 * 2^(12 - Offset_len)

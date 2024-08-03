@@ -41,35 +41,84 @@ wire flash_byte_n;       //Flash 8bit模式选择，低有效。在使用flash�
 
 //Windows需要注意路径分隔符的转义，例如"D:\\foo\\bar.bin"
 parameter BASE_RAM_INIT_FILE = "D:\\github_doc\\Code\\Verilog_code\\LoongArch_competition\\master\\asm\\supervisor_la\\supervisor_la\\kernel\\test_kernel.bin"; //BaseRAM初始化文件，请修改为实际的绝对路径
-parameter EXT_RAM_INIT_FILE = "/tmp/data.bin";    //ExtRAM初始化文件，请修改为实际的绝对路径
+parameter EXT_RAM_INIT_FILE = "D:\\github_doc\\Code\\Verilog_code\\LoongArch_competition\\master\\asm\\supervisor_la\\supervisor_la\\kernel\\ext_data.bin";    //ExtRAM初始化文件，请修改为实际的绝对路径
 parameter FLASH_INIT_FILE = "/tmp/kernel.elf";    //Flash初始化文件，请修改为实际的绝对路径
-
+`define instruction_len 33
 reg [7:0] TxD_data;
 reg       TxD_start;
-reg [4:0] instruction_count;
-reg [31:0] instruction_list [0:15];
+reg [6:0] instruction_count;
+reg [31:0] instruction_list [0:`instruction_len - 1];
 reg [31:0] instruction_len;
 reg [1:0] circular_count;
 reg [31:0]address;
 reg [31:0]RunD_address;
 reg [31:0]RunG_address;
 reg [31:0]instruction_len_times_4;
-`define instruction_len 10
-
+reg [31:0]search_address;
+reg [31:0]search_len;
 initial begin
     instruction_len = 32'h4;
-    instruction_list[0]  = 32'h15002004;
-    instruction_list[1]  = 32'h15008005;
-    instruction_list[2]  = 32'h14006006;
-    instruction_list[3]  = 32'h00101886;    
-    instruction_list[4]  = 32'h2880008c;
-    instruction_list[5]  = 32'h298000ac;
-    instruction_list[6]  = 32'h02801084;
-    instruction_list[7]  = 32'h028010a5;
-    instruction_list[8]  = 32'h5ffff086;
-    instruction_list[9]  = 32'h4c000020;
+    //fibonacci
+    // instruction_list[0]     = 32'h0280040c;
+    // instruction_list[1]     = 32'h0280040D;
+    // instruction_list[2]     = 32'h15008004;
+    // instruction_list[3]     = 32'h02808085;
+    // instruction_list[4]     = 32'h0010358E;
+    // instruction_list[5]     = 32'h028001AC;
+    // instruction_list[6]     = 32'h028001CD;
+    // instruction_list[7]     = 32'h2980008E;
+    // instruction_list[8]     = 32'h02801084;
+    // instruction_list[9]     = 32'h5FFFEC85;
+    // instruction_list[10]    = 32'h4C000020;
+    //stream
+    // instruction_list[0]  = 32'h15002004;
+    // instruction_list[1]  = 32'h15008005;
+    // instruction_list[2]  = 32'h038c0006;
+    // instruction_list[3]  = 32'h00101886;    
+    // instruction_list[4]  = 32'h2880008c;
+    // instruction_list[5]  = 32'h298000ac;
+    // instruction_list[6]  = 32'h02801084;
+    // instruction_list[7]  = 32'h028010a5;
+    // instruction_list[8]  = 32'h5ffff086;
+    // instruction_list[9]  = 32'h4c000020;
+    //matrix
+    instruction_list[0 ]  = 32'h15008004;
+    instruction_list[1 ]  = 32'h15008205;
+    instruction_list[2 ]  = 32'h15008406;
+    instruction_list[3 ]  = 32'h03800807;
+    instruction_list[4 ]  = 32'h00150014;
+    instruction_list[5 ]  = 32'h58006e87;
+    instruction_list[6 ]  = 32'h00408a8c;
+    instruction_list[7 ]  = 32'h0040a68e;
+    instruction_list[8 ]  = 32'h0010308c;
+    instruction_list[9 ]  = 32'h001038ae;
+    instruction_list[10]  = 32'h0015000d;
+    instruction_list[11]  = 32'h58004da7;
+    instruction_list[12]  = 32'h28800193;
+    instruction_list[13]  = 32'h0040a5a8;
+    instruction_list[14]  = 32'h001020c8;
+    instruction_list[15]  = 32'h001501d0;
+    instruction_list[16]  = 32'h0015000f;
+    instruction_list[17]  = 32'h580029e7;
+    instruction_list[18]  = 32'h028005ef;
+    instruction_list[19]  = 32'h28800211;
+    instruction_list[20]  = 32'h28800112;
+    instruction_list[21]  = 32'h001c4671;
+    instruction_list[22]  = 32'h02801108;
+    instruction_list[23]  = 32'h02801210;
+    instruction_list[24]  = 32'h00104651;
+    instruction_list[25]  = 32'h29bff111;
+    instruction_list[26]  = 32'h53ffdfff;
+    instruction_list[27]  = 32'h028005ad;
+    instruction_list[28]  = 32'h0288018c;
+    instruction_list[29]  = 32'h53ffbbff;
+    instruction_list[30]  = 32'h02800694;
+    instruction_list[31]  = 32'h53ff9bff;
+    instruction_list[32]  = 32'h4c000020;
     RunD_address = 32'h80100000;
     RunG_address = 32'h80100000;
+    search_address = 32'h80400000;
+    search_len = 32'h300;
     instruction_len_times_4 = `instruction_len << 2;
 end
 
@@ -87,6 +136,11 @@ initial begin
     instruction_count = 0;
     circular_count = 3;
     address = 32'h80100000;
+    // //lab2
+    // #347690 TxD_start = 1;
+    // TxD_data = 8'h54;
+    // #20 TxD_start = 0;
+    // lab3
     #1080450                        // 与波特率有关，得测一测，等待串口输入的时间
     repeat(`instruction_len) begin  // 串口输入用户程序
         TxD_start = 1;
@@ -133,35 +187,37 @@ initial begin
         #32920 instruction_count = instruction_count + 1;
     end
 
-    #32920 TxD_start = 1;
-    TxD_data = 8'h44;               // D 查看用户区间内存
-    #20 TxD_start = 0;
+    // #32920 TxD_start = 1;
+    // TxD_data = 8'h44;               // D 查看用户区间内存
+    // #20 TxD_start = 0;
 
-    repeat(4) begin                 // 长度发送
-        #32920 TxD_start = 1;
-        circular_count = circular_count + 1;
-        case(circular_count)
-            0: TxD_data = RunD_address[7:0];
-            1: TxD_data = RunD_address[15:8];
-            2: TxD_data = RunD_address[23:16];
-            3: TxD_data = RunD_address[31:24];
-        endcase
-        #20 TxD_start = 0;
-    end
+    // repeat(4) begin                 // 长度发送
+    //     #32920 TxD_start = 1;
+    //     circular_count = circular_count + 1;
+    //     case(circular_count)
+    //         0: TxD_data = RunD_address[7:0];
+    //         1: TxD_data = RunD_address[15:8];
+    //         2: TxD_data = RunD_address[23:16];
+    //         3: TxD_data = RunD_address[31:24];
+    //     endcase
+    //     #20 TxD_start = 0;
+    // end
 
-    repeat(4) begin                 // 长度发送
-        #32920 TxD_start = 1;
-        circular_count = circular_count + 1;
-        case(circular_count)
-            0: TxD_data = instruction_len_times_4[7:0];
-            1: TxD_data = instruction_len_times_4[15:8];
-            2: TxD_data = instruction_len_times_4[23:16];
-            3: TxD_data = instruction_len_times_4[31:24];
-        endcase
-        #20 TxD_start = 0;
-    end
-
-    #1094540 TxD_data = 8'h47;       // G， 时间需要调
+    // repeat(4) begin                 // 长度发送
+    //     #32920 TxD_start = 1;
+    //     circular_count = circular_count + 1;
+    //     case(circular_count)
+    //         0: TxD_data = instruction_len_times_4[7:0];
+    //         1: TxD_data = instruction_len_times_4[15:8];
+    //         2: TxD_data = instruction_len_times_4[23:16];
+    //         3: TxD_data = instruction_len_times_4[31:24];
+    //     endcase
+    //     #20 TxD_start = 0;
+    // end
+    // // #1094540 //stream
+    // #3547320 // matrix
+    // // #1197340 //fibonacci
+    TxD_data = 8'h47;       // G， 时间需要调
     TxD_start = 1;
     #20     TxD_start = 0;
 
@@ -177,6 +233,34 @@ initial begin
         #20 TxD_start = 0;
     end
 
+    // #159400
+    // TxD_start = 1;
+    // TxD_data = 8'h44;               // D 查看用户区间内存
+    // #20 TxD_start = 0;
+
+    // repeat(4) begin                 // 长度发送
+    //     #32920 TxD_start = 1;
+    //     circular_count = circular_count + 1;
+    //     case(circular_count)
+    //         0: TxD_data = search_address[7:0];
+    //         1: TxD_data = search_address[15:8];
+    //         2: TxD_data = search_address[23:16];
+    //         3: TxD_data = search_address[31:24];
+    //     endcase
+    //     #20 TxD_start = 0;
+    // end
+
+    // repeat(4) begin                 // 长度发送
+    //     #32920 TxD_start = 1;
+    //     circular_count = circular_count + 1;
+    //     case(circular_count)
+    //         0: TxD_data = search_len[7:0];
+    //         1: TxD_data = search_len[15:8];
+    //         2: TxD_data = search_len[23:16];
+    //         3: TxD_data = search_len[31:24];
+    //     endcase
+    //     #20 TxD_start = 0;
+    // end
 end
 
 

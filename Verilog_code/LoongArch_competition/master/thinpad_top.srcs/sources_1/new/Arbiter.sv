@@ -51,6 +51,7 @@ module Arbiter
         input       [31:0]  d_raddr,
         input       [31:0]  d_waddr,
         input       [(1 << (Offset_len + 3)) - 1:0] d_wdata,
+        input               d_write_type,
         output  reg [(1 << (Offset_len + 3)) - 1:0] mem_rdata,
         output  reg         d_rready,
         output  reg         d_wready,
@@ -81,10 +82,8 @@ module Arbiter
     wire [31:0] operation_address;
     // 串口
     reg [7:0]   seriel_status_reg;   // 串口状态寄存器
-    reg         seriel_sel;
     reg [7:0]   seriel_data_reg;     // 串口读和写字节寄存器
 
-    assign seriel_sel = d_raddr == 32'hbfd003fc | d_raddr == 32'hbfd003f8;  // 串口地址选择信号
     assign seriel_status_reg = {6'h0, {ext_uart_avai}, {!ext_uart_busy}};   // 串口状态寄存器
 
     //直连串口接收发送演示，从直连串口收到的数据再发送出去
@@ -94,7 +93,7 @@ module Arbiter
     reg ext_uart_clear;                                   // 清除rxd数据有效信号
     reg ext_uart_start, ext_uart_avai;                    // txd发送开始信号， 串口数据读和写寄存器数据可用状态（针对rxd，对txd没用）
 
-    async_receiver #(.ClkFrequency(50000000),.Baud(384000)) //接收模块，9600无检验位
+    async_receiver #(.ClkFrequency(50000000),.Baud(9600)) //接收模块，9600无检验位
     ext_uart_r(
         .clk(clk),                        //外部时钟信号
         .RxD(rxd),                        //外部串行信号输入
@@ -112,7 +111,7 @@ module Arbiter
             ext_uart_buffer <= ext_uart_rx;
             ext_uart_avai <= 1;
         end 
-        else if(!ext_uart_busy && ext_uart_avai && state == 2 & seriel_sel & buf_shift_count == 5'h01 & d_raddr == 32'hbfd003f8)begin 
+        else if(!ext_uart_busy && ext_uart_avai && state == 2 & buf_shift_count == 5'h01 & d_raddr == 32'hbfd003f8)begin 
             //当发送器不再占用bfd003f8的数据（因为发送需要数据稳定）时，将数据接收下来，并且接收有效标志变为无效，等待接收下一次数据
             ext_uart_avai <= 0;
         end
@@ -134,8 +133,8 @@ module Arbiter
             ext_uart_start <= 0;
         end
         else begin
-            if(state == 3 & d_waddr == 32'hbfd003c0 & buf_shift_count == 5'h01 & !ext_uart_busy) begin       // 仲裁器处于DCache写状态且地址为串口地址bfd003f8时，将串口数据寄存器更新的同时将发送的数据更新
-                ext_uart_tx <= d_wdata[(1 << (Offset_len + 3)) - 57:(1 << (Offset_len + 3)) - 64];
+            if(state == 3 & d_waddr == 32'hbfd003f8 & buf_shift_count == 5'h01 & !ext_uart_busy) begin       // 仲裁器处于DCache写状态且地址为串口地址bfd003f8时，将串口数据寄存器更新的同时将发送的数据更新
+                ext_uart_tx <= d_wdata[31:0];
                 ext_uart_start <= 1;
             end
             else begin
@@ -146,7 +145,7 @@ module Arbiter
         end
     end
     
-    async_transmitter #(.ClkFrequency(50000000),.Baud(384000)) //发送模块，9600无检验位
+    async_transmitter #(.ClkFrequency(50000000),.Baud(9600)) //发送模块，9600无检验位
     ext_uart_t(
         .clk(clk),                    //外部时钟信号
         .TxD(txd),                    //串行信号输出
@@ -241,21 +240,13 @@ module Arbiter
             else if(|buf_shift_count) begin
                 buf_shift_count <= buf_shift_count - 1;
             end
-            // else if(!i_rvalid_reg_hold) begin
-            //     if(d_rvalid_reg_hold & d_raddr == 32'hbfd003c0) begin       //串口直接读出数据，不需要计数读取
-            //         buf_shift_count <= 0;
-            //     end 
-            //     else if(d_wvalid_reg_hold & d_waddr == 32'hbfd003c0) begin  //串口直接写数据，不需要计数写入
-            //         buf_shift_count <= 0;
-            //     end
-            // end
             else if((state == 0 && (i_rvalid_reg_hold || d_rvalid_reg_hold || d_wvalid_reg_hold))) begin
                 if(i_rvalid_reg_hold) begin
                     buf_shift_count <= (1 << (Offset_len - 2));
                 end
                 else begin
                     if(d_rvalid_reg_hold) begin
-                        if(seriel_sel) begin
+                        if(d_raddr == 32'hbfd003f8 | d_raddr == 32'hbfd003fc) begin
                             buf_shift_count <= 1;
                         end
                         else begin
@@ -263,7 +254,7 @@ module Arbiter
                         end
                     end
                     else if(d_wvalid_reg_hold) begin
-                        if(d_waddr == 32'hbfd003c0) begin
+                        if(d_write_type) begin
                             buf_shift_count <= 1;
                         end
                         else begin
@@ -273,7 +264,7 @@ module Arbiter
                 end
             end
             else if((state == 1 && buf_shift_count == 0 && (d_rvalid_reg_hold || d_wvalid_reg_hold))) begin
-                if((d_rvalid_reg_hold & seriel_sel) | (!d_rvalid_reg_hold & d_wvalid_reg_hold & d_waddr == 32'hbfd003c0)) begin
+                if((d_rvalid_reg_hold & (d_raddr == 32'hbfd003f8 | d_raddr == 32'hbfd003fc)) | (!d_rvalid_reg_hold & d_wvalid_reg_hold & d_write_type)) begin
                     buf_shift_count <= 1;
                 end
                 else begin
@@ -285,7 +276,7 @@ module Arbiter
                     buf_shift_count <= (1 << (Offset_len - 2));
                 end
                 else begin
-                    if(d_wvalid_reg_hold & seriel_sel) begin
+                    if(d_wvalid_reg_hold & d_write_type) begin
                         buf_shift_count <= 1;
                     end 
                     else begin
@@ -298,7 +289,7 @@ module Arbiter
                     buf_shift_count <= (1 << (Offset_len - 2));
                 end
                 else begin
-                    if(d_rvalid_reg_hold & seriel_sel) begin
+                    if(d_rvalid_reg_hold & (d_raddr == 32'hbfd003f8 | d_raddr == 32'hbfd003fc)) begin
                         buf_shift_count <= 1;
                     end 
                     else begin
@@ -347,7 +338,7 @@ module Arbiter
         end
         else begin
             if((state == 1 || state == 2) && buf_shift_count == 0) begin
-                if(state == 2 & seriel_sel) begin
+                if(state == 2 & (d_raddr == 32'hbfd003f8 | d_raddr == 32'hbfd003fc)) begin
                     mem_rdata <= {{24{1'b0}},seriel_status_reg, {24{1'b0}}, seriel_data_reg, {{((1 << Offset_len + 3) - 64){1'b0}}}};
                 end
                 else begin
@@ -421,8 +412,8 @@ module Arbiter
         end
         else begin  //写请求时才对存储器进行写
             if(state == 3 && buf_shift_count != 0)  begin
-                if(!(d_waddr == 32'hbfd003c0)) begin   
-                    if(d_waddr[22]) begin
+                if(!(d_waddr == 32'hbfd003f8)) begin   
+                    if(d_waddr >= 32'h80400000) begin
                         Ext_we <= 1;
                     end
                     else begin
@@ -496,11 +487,12 @@ module Arbiter
 
 
     always @(posedge clk) begin
-        if(state == 3 & d_waddr == 32'hbfd003c0) begin      //st.b写入的内容
-            seriel_data_reg <= d_wdata[(1 << (Offset_len + 3)) - 57:(1 << (Offset_len + 3)) - 64];
+        if(state == 3 & d_waddr == 32'hbfd003f8) begin      //st.b写入的内容
+            seriel_data_reg <= d_wdata[31:0];
         end
         else if(!ext_uart_busy & ext_uart_avai) begin          //串口读到的内容
             seriel_data_reg <= ext_uart_buffer;
         end
     end
+
 endmodule

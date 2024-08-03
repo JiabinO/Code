@@ -232,7 +232,7 @@ module Decoder
                             ({6{Instruction[31:15] == slli_code}}       & slli_inst)        |
                             ({6{Instruction[31:15] == srli_code}}       & srli_inst)        |
                             ({6{Instruction[31:15] == srai_code}}       & srai_inst)        |
-                    
+                            ({6{Instruction[31:15] == mulw_code}}       & mulw_inst)        |
                             ({6{Instruction[31:22] == slti_code }}      & slti_inst)        |
                             ({6{Instruction[31:22] == sltui_code}}      & sltui_inst)       |
                             ({6{Instruction[31:22] == addi_code }}      & addi_inst)        |
@@ -261,7 +261,7 @@ module Decoder
                             ({6{Instruction[31:26] == b_code }}         & b_inst)           |
                             ({6{Instruction[31:26] == bl_code }}        & bl_inst)          |
                             ({32{Instruction[31:0] == nop_code}}        & nop_inst)         |
-                            ({32{Instruction[31:0] == halt_code}}       & halt_inst);
+                            ({32{Instruction[31:0] == halt_code}}       & halt_inst)        ;
 
     assign imm =    ( {32{control_bus == addi_inst}}         & {{20{Instruction[21]}} ,Instruction[21:10]})                     |
                     ( {32{control_bus == slti_inst}}         & {{20{Instruction[21]}} ,Instruction[21:10]})                     |

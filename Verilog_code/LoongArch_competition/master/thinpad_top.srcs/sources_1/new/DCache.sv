@@ -49,7 +49,8 @@ module DCache
         output  reg  [31                            :0] d_raddr,            // 发送给仲裁器的DCache读地址
         output  reg  [31                            :0] DCache_rdata,       // 发送给CPU的读数据
         output  reg                                     DCache_miss_stop,   // 发送给CPU的miss信号
-        output  reg  [(1 << (3 + Offset_len)) - 1   :0] d_wdata             // 发送给仲裁器写入内存的数据
+        output  reg  [(1 << (3 + Offset_len)) - 1   :0] d_wdata,            // 发送给仲裁器写入内存的数据
+        output  reg                                     d_write_type        // 写数据样式 0 - 块的一行, 1 - 一个字(存储在低地址)
     );
 
     //容量为8KB, 两路组相连，每路4KB = 2^(Offset_len-2) 字 * 2^(12 - Offset_len)
@@ -89,7 +90,6 @@ module DCache
     reg                                     word_write_reg0;
     reg                                     DCache_miss;
     reg  [(1 << (3 + Offset_len)) - 1   :0] d_mem_rdata;
-    reg                                     write_uncache_have_read;    // uncache写已经从仲裁器获取了待插入的数据
     reg  [(1 << (3 + Offset_len)) - 1   :0] inserted_data_reg;
     reg  [31                            :0] DCache_wdata_restore;  
     reg  [19                            :0] tag1_restore;
@@ -111,22 +111,24 @@ module DCache
     wire [11 - Offset_len               :0] index_reg;
     wire [Offset_len - 1                :0] offset_reg;
     wire                                    restrict_test;
-    wire                                    read_uncache;
-    wire                                    read_uncache_reg0;
+    wire                                    seriel_read;
+    wire                                    seriel_read_reg0;
     wire                                    write_uncache;
     wire                                    write_uncache_reg0;
     wire [1                             :0] hit_reg0;
     wire                                    pipeline_enable;
     wire                                    seriel_buffer_write;
+    wire                                    seriel_buffer_write_reg0;
 
 
     assign tag_reg              = DCache_addr_reg[31:12];
     assign index                = DCache_addr[11:Offset_len];
-    assign pipeline_enable      = (state == `IDLE & !(DCache_miss | read_uncache | write_uncache | seriel_buffer_write)) | state == `WAIT;
+    assign pipeline_enable      = (state == `IDLE & !(DCache_miss | seriel_read | write_uncache | seriel_buffer_write)) | state == `WAIT;
     assign hit_reg0             = {DCache_addr_reg0[31:12] == (state == `WAIT ? tag2_restore : tag2), DCache_addr_reg0[31:12] == (state == `WAIT ? tag1_restore : tag1)};   // 50156
-    assign read_uncache_reg0    = (DCache_addr_reg0 == `SERIEL_BUFFER_ADDR | DCache_addr_reg0 == `SERIEL_STATUS_ADDR) & mem_read_reg0;
+    assign seriel_read_reg0     = (DCache_addr_reg0 == `SERIEL_BUFFER_ADDR | DCache_addr_reg0 == `SERIEL_STATUS_ADDR) & mem_read_reg0;
     assign write_uncache_reg0   = ((DCache_addr_reg0 >= `UNCACHE_WRITE_BEGIN_ADDR & DCache_addr_reg0 <= `UNCACHE_WRITE_END_ADDR) | DCache_addr_reg0 == `SERIEL_BUFFER_ADDR) & mem_write_reg0;
-    assign read_uncache         = (DCache_addr_reg == `SERIEL_BUFFER_ADDR | DCache_addr_reg == `SERIEL_STATUS_ADDR) & mem_read_reg;  // 由于串口可以被外部改变，因此每次读都需要读取外设
+    assign seriel_buffer_write_reg0 = mem_write_reg0 & (DCache_addr_reg0 == `SERIEL_BUFFER_ADDR);
+    assign seriel_read          = (DCache_addr_reg == `SERIEL_BUFFER_ADDR | DCache_addr_reg == `SERIEL_STATUS_ADDR) & mem_read_reg;  // 由于串口可以被外部改变，因此每次读都需要读取外设
     assign write_uncache        = (DCache_addr_reg >= `UNCACHE_WRITE_BEGIN_ADDR & DCache_addr_reg <= `UNCACHE_WRITE_END_ADDR) & mem_write_reg;     
     assign index_reg            = DCache_addr_reg[11:Offset_len];
     assign offset_reg           = DCache_addr_reg[Offset_len - 1:0];
@@ -134,7 +136,6 @@ module DCache
     assign dirty                = !last_used_way[index_reg] ? dirty1[index_reg] : dirty2[index_reg];                                              
     assign hit                  = {DCache_addr_reg[31:12] == tag2_reg, DCache_addr_reg[31:12] == tag1_reg} ;
     assign restrict_test_reg0   = ((DCache_addr_reg0 >= 32'h80100000 & DCache_addr_reg0 <= 32'h807fffff) & mem_write_reg0) | (DCache_addr_reg0 == 32'hbfd003fc | DCache_addr_reg0 == 32'hbfd003f8);
-    assign d_waddr              = DCache_addr_reg[31:0] & 32'hffffffc0; 
     assign DCache_miss_stop     = !pipeline_enable;
     assign seriel_buffer_write  = mem_write_reg & (DCache_addr_reg == `SERIEL_BUFFER_ADDR);
     /*
@@ -149,27 +150,24 @@ module DCache
                 7. 读串口 -> MISS
                 8. 写串口 -> WRITE
             
-        MISS:   1. mem_read_reg & !read_uncache -> 判断脏位:
+        MISS:   1. mem_read_reg & !seriel_read -> 判断脏位:
                     i. 不脏，从仲裁器直接，等待 d_rready & !d_rready_reg，然后写回Cache，dirty 标记为0， 需要将 d_rvalid 置为1   -> READ
                     ii.脏，如果是串口，则不写回主存,否则先写回主存；再等待 d_rready & !d_rready_reg， 然后写回Cache，dirty 标记为0，需要将 d_wvalid 和 d_rvalid 同时置为1 -> WRITE
-                2. mem_read_reg & read_uncache -> 等待 d_rready & !d_rready_reg，直接读出，不写回Cache，dirty 不用改，需要将 d_rvalid 置为1 -> READ
+                2. mem_read_reg & seriel_read -> 等待 d_rready & !d_rready_reg，直接读出，不写回Cache，dirty 不用改，需要将 d_rvalid 置为1 -> READ
                 3. mem_write_reg & !write_uncache -> 判断是否写串口：
                     (1) 写串口: 直接跳到READ，不进行写回
                     (2) 不写串口： -> 判断是否为脏:
                         i. 不脏，等待仲裁器 d_rready & !d_rready_reg， 然后写回Cache，使用insert模块，dirty 标记为1，需要将 d_rvalid 置为1  -> READ
                         ii. 脏，先把脏数据写回，等待d_rready & !d_rready_reg 时，将数据从仲裁器取出，使用insert模块获取要写的数据，dirty 标记为1，需要将 d_wvalid 和 d_rvalid同时置为1 -> WRITE
-                4. mem_write_reg & write_uncache -> 判断脏位：
-                    i. 不脏，等待仲裁器 d_rready & !d_rready_reg， 获取仲裁器数据，然后通过insert模块写入缓存的同时，将d_wdata更新，需要同时置起 d_rvalid -> READ
-                    ii. 脏，等待仲裁器 d_wready & !d_wready_reg, 进入READ状态，获取仲裁器数据，又重新进入WRITE状态，使用insert模块写入缓存，最后写回缓存 -> WRITE
+                4. mem_write_reg & write_uncache:
+                    直接将写穿透数据写入主存 -> WRITE
 
         WRITE:  1. !write_uncache & mem_write_reg -> READ 写未命中，且刚刚把脏数据写进缓存，需要读数据，然后使用insert模块写回缓存
-                2. !read_uncache & mem_read_reg -> READ 读未命中，且刚刚把脏数据写进缓存，需要读数据，然后把数据写回缓存
-                3. write_uncache & !write_uncache_have_read -> READ uncache写刚刚把脏数据写回，需要读数据，然后再次进入写状态将数据写穿透
-                4. write_uncache & write_uncache_have_read -> REFILL uncache写刚刚写穿透了，把数据写回缓存
+                2. !seriel_read & mem_read_reg -> READ 读未命中，且刚刚把脏数据写进缓存，需要读数据，然后把数据写回缓存
+                3. write_uncache -> 进入WAIT等待返回
 
-        READ:   1. write_uncache -> WRITE  刚刚读完数据，使用 insert 模块更新写数据，进入WRITE写穿透
-                2. mem_read_reg & !read_uncache -> REFILL 读完数据且需要写回缓存，进入REFILL
-                3. mem_write_reg & !write_uncache -> REFILL 读完数据，使用 insert 更新写回数据，进入REFILL
+        READ:   1. mem_read_reg & !seriel_read -> REFILL 读完数据且需要写回缓存，进入REFILL
+                2. mem_write_reg & !write_uncache -> REFILL 读完数据，使用 insert 更新写回数据，进入REFILL
 
 
         REFILL: 写回tag和way，更新dirty，更新最近使用记录
@@ -261,48 +259,38 @@ module DCache
             state <= `IDLE; 
         end
         else begin
-            if (state == `IDLE & (DCache_miss | read_uncache | (DCache_addr_reg == `SERIEL_BUFFER_ADDR & mem_write_reg))) begin  // write_uncache 但是
-                state <= `MISS;  
-            end 
-            else if (state == `IDLE & !DCache_miss & write_uncache) begin
-                state <= `WRITE;
+            if (state == `IDLE) begin
+                if (seriel_read | seriel_buffer_write | write_uncache | (((!seriel_read & mem_read_reg) | (!write_uncache & mem_write_reg)) & DCache_miss)) begin
+                    state <= `MISS;
+                end
             end
             else if (state == `MISS) begin
-                if(!dirty | read_uncache | (seriel_buffer_write)) begin
+                if(seriel_read | (!dirty & !seriel_read & !seriel_buffer_write & !write_uncache & (mem_read_reg | mem_write_reg))) begin
                     state <= `READ;
                 end
-                else if(dirty) begin
+                else if (write_uncache | seriel_buffer_write) begin
                     state <= `WRITE;
                 end
             end
             else if (state == `WRITE) begin
                 if(d_wready & !d_wready_reg) begin
-                    if( (mem_write_reg & !write_uncache & DCache_addr_reg != `SERIEL_BUFFER_ADDR    )|  // 写未命中且有脏数据，脏数据写回后进入READ读取内存
-                        (write_uncache & !write_uncache_have_read                                   )|  // 写未命中且有脏数据，脏数据写回后进入READ读取内存
-                        (mem_read_reg & !read_uncache                                               ))  // 读未命中且有脏数据，脏数据写回后进入READ读取内存
-                    begin
+                    if(!seriel_read & !write_uncache & !seriel_buffer_write & dirty) begin // 缓存读和写在写完脏数据之后进入读状态
                         state <= `READ;
                     end
-                    else if(write_uncache_have_read & write_uncache & !seriel_buffer_write) begin
+                    else if(!DCache_miss & write_uncache) begin
                         state <= `REFILL;
                     end
-                    else if(seriel_buffer_write) begin
+                    else if(DCache_miss & (write_uncache | seriel_buffer_write)) begin      
                         state <= `WAIT;
                     end
                 end
-                    
             end
             else if (state == `READ) begin
                 if(d_rready & !d_rready_reg) begin
-                    if(write_uncache | (seriel_buffer_write)) begin
-                        state <= `WRITE;
-                    end
-                    else if((mem_read_reg & !read_uncache   )|  // 读取完数据，可以写回到缓存
-                            (mem_write_reg & !write_uncache ))  // 读取完数据，可以通过 insert 模块获取数据写回到缓存
-                    begin
+                    if(!seriel_read & !write_uncache & !seriel_buffer_write) begin
                         state <= `REFILL;
                     end 
-                    else if(read_uncache) begin                 // 读uncache不写回
+                    else if(seriel_read) begin                 // 读uncache不写回
                         state <= `WAIT;
                     end   
                 end
@@ -352,8 +340,18 @@ module DCache
                     last_used_way[index_reg] <= 1;
                 end
             end
-            else if(state == `REFILL) begin             // 如果不hit，则改为上次未被使用的
-                last_used_way[index_reg] <= !last_used_way[index_reg];
+            else if(state == `REFILL) begin             // 如果不hit，则改为上次未被使用的, 针对写穿透的，非写穿透一定miss
+                if(DCache_miss) begin
+                    last_used_way[index_reg] <= !last_used_way[index_reg];
+                end
+                else begin
+                    if(hit[0]) begin
+                        last_used_way[index_reg] <= 0;
+                    end
+                    else begin
+                        last_used_way[index_reg] <= 1;
+                    end
+                end
             end
         end
     end
@@ -383,7 +381,7 @@ module DCache
                     end
                 end
             end
-            else if ((state == `IDLE | state == `WAIT) & mem_write_reg0 & !write_uncache_reg0) begin
+            else if ((state == `IDLE | state == `WAIT) & mem_write_reg0 & !write_uncache_reg0 & !seriel_buffer_write_reg0) begin // 预判流动的下个周期是否需要写
                 if(hit_reg0[1]) begin
                     way2_we <= 1;
                 end
@@ -404,16 +402,16 @@ module DCache
             DCache_rdata_block <= 0;
         end
         else begin
-            if(state == `READ & d_rready & !d_rready_reg & read_uncache) begin  // read_uncache 的输出， WAIT时期更新出来
+            if(state == `READ & d_rready & !d_rready_reg & seriel_read) begin  // seriel_read(读串口) 的输出， WAIT时期更新出来
                 DCache_rdata_block <= mem_rdata;
             end
             else if(state == `REFILL) begin                                     // miss 或者 write_uncache 的输出，也是WAIT时期更新出来
                 if(mem_read_reg) begin
-                    DCache_rdata_block <= d_mem_rdata;                          // 从仲裁器读出的数据(从READ状态过来的)
+                    DCache_rdata_block <= d_mem_rdata;                          // read uncache 从仲裁器读出的数据(从READ状态过来的)
                 end
-                else if(mem_write_reg) begin
-                    if(write_uncache) begin
-                        DCache_rdata_block <= inserted_data;                    // 写入cache的数据是插入后的数据(从READ状态过来的)
+                else if(mem_write_reg) begin                                    // write: cache - inserted data, uncache - d_wdata
+                    if(!write_uncache) begin
+                        DCache_rdata_block <= inserted_data;                    // 写入cache的数据是插入后的数据
                     end
                     else begin
                         DCache_rdata_block <= d_wdata;                          // write_uncache 最后写入仲裁器的数据就是最新读出的数据(从WRITE状态过来的)
@@ -422,7 +420,7 @@ module DCache
             end
             else if(state == `WAIT) begin
                 if(DCache_addr_reg[31:Offset_len] == DCache_addr_reg0[31:Offset_len]) begin // 如果 WAIT 读的块和下一个周期读的块是一样的
-                    if(!read_uncache & !read_uncache_reg0) begin                            // 如果二者都不是uncache读
+                    if(!seriel_read & !seriel_read_reg0) begin                              // 如果二者都不是uncache读
                         DCache_rdata_block <= DCache_rdata_block;
                     end
                 end
@@ -431,18 +429,15 @@ module DCache
                         DCache_rdata_block <= way2_rdata_restore;
                     end
                     else if(hit_reg0[0]) begin
-                        DCache_rdata_block <= way1_rdata_restore;                           // 22122946
+                        DCache_rdata_block <= way1_rdata_restore;                           
                     end     
                 end
-            end                                                                             // 未恢复数据
+            end                                                                             
             else if(state == `IDLE) begin
-                if(!(DCache_miss | read_uncache | write_uncache) | state == `WAIT) begin    // 如果不进入MISS状态，数据需要更新
+                if(!(DCache_miss | seriel_read | write_uncache)) begin                      // 如果不进入MISS状态，数据需要更新 串口一定miss,所以不用加限制条件(因为tag从未在串口写或读时写回过)
                     if(DCache_addr_reg[31:Offset_len] == DCache_addr_reg0[31:Offset_len]) begin  
                         if(mem_write_reg) begin                                             // 如果刚刚写进来，则更新最近写进来的数据
                             DCache_rdata_block <= write_data;
-                        end
-                        else begin
-                            DCache_rdata_block <= DCache_rdata_block;                       // 如果不写，则选择刚刚读出的一行数据
                         end
                     end 
                     else begin
@@ -464,15 +459,11 @@ module DCache
             d_rvalid <= 0;
         end
         else begin
-            if(state == `MISS & (!dirty | read_uncache | seriel_buffer_write)) begin   
+            if(state == `MISS & ((!dirty & !write_uncache & !seriel_buffer_write) | seriel_read)) begin   
                 d_rvalid <= 1;
             end
-            else if(state == `WRITE & d_wready & !d_wready_reg) begin           // 22098870 出现写串口数据时 write_uncache_have_read未正确置起，且valid不在ready沿变化
-                if( (mem_write_reg & !write_uncache)              |
-                    ((write_uncache & !write_uncache_have_read)   |
-                    (mem_read_reg   & !read_uncache)              )) begin
-                    d_rvalid <= 1;
-                end
+            else if(state == `WRITE & !write_uncache & !seriel_buffer_write) begin      // 脏数据写回
+                d_rvalid <= 1;
             end
             else if(d_rready && !d_rready_reg) begin
                 d_rvalid <= 0;
@@ -487,17 +478,9 @@ module DCache
         end
         else begin
             if(state == `MISS) begin
-                if(dirty & !read_uncache) begin         // 读穿透不需要写
+                if(write_uncache | (!seriel_read & !write_uncache & !seriel_buffer_write & dirty) | seriel_buffer_write) begin    // 写穿透、普通的未命中读写且脏数据     
                     d_wvalid <= 1;
                 end
-            end
-            else if(state == `READ) begin
-                if((write_uncache | (seriel_buffer_write)) & d_rready & !d_rready_reg) begin
-                    d_wvalid <= 1;
-                end
-            end
-            else if(state == `IDLE & !DCache_miss & write_uncache) begin
-                d_wvalid <= 1;
             end
             else begin
                 if(d_wready & !d_wready_reg) begin
@@ -519,7 +502,7 @@ module DCache
         end
         else begin
             if(state == `REFILL) begin                      // 未命中或uncache时
-                if(mem_read_reg & !read_uncache) begin
+                if(mem_read_reg) begin
                     if(last_used_way[index_reg]) begin      // 读数据，与主存相同，脏位清零
                         dirty1[index_reg] <= 0;
                     end
@@ -529,7 +512,7 @@ module DCache
                 end
                 else if(mem_write_reg) begin
                     if(write_uncache) begin                 // 写穿透，与主存相同，脏位清零
-                        if(last_used_way[index_reg]) begin     
+                        if(hit[0]) begin     
                             dirty1[index_reg] <= 0;
                         end
                         else begin
@@ -556,35 +539,48 @@ module DCache
             d_wdata <= 0;
         end
         else begin
-            if(state == `MISS & dirty) begin        // 如果脏，则写回数据首先是原来缓存的内容
-                if(last_used_way[index_reg]) begin  // 选择最近未被使用的那一路
-                    d_wdata <= way1_rdata_reg;
+            if(state == `MISS) begin
+                if(write_uncache) begin
+                    if(DCache_miss) begin
+                        d_wdata <= {{((1 << (Offset_len + 3)) - 32){1'b0}}, DCache_wdata_reg};   //写穿透如果未命中，则将写入数据放在低32位，高位置为0
+                    end
+                    else begin
+                        d_wdata <= inserted_data;                                               // 如果命中，则写入插入后的数据
+                    end
                 end
-                else begin
-                    d_wdata <= way2_rdata_reg;
+                else if(seriel_buffer_write) begin
+                    d_wdata <= {{((1 << (Offset_len + 3)) - 32){1'b0}}, DCache_wdata_reg};
                 end
-            end
-            else if(state == `READ & (write_uncache | (seriel_buffer_write)) & d_rready & !d_rready_reg) begin   // 如果写穿透刚刚读完了数据并且完成insert
-                d_wdata <= inserted_data;
-            end
-            else if(state == `IDLE & !DCache_miss & write_uncache) begin
-                d_wdata <= inserted_data;
+                else if(!seriel_read & !seriel_buffer_write & dirty) begin                      //普通读写未命中且脏
+                    if(!last_used_way[index_reg]) begin
+                        d_wdata <= way1_rdata_reg;
+                    end
+                    else begin
+                        d_wdata <= way2_rdata_reg;
+                    end
+                end
             end
         end
     end
     
-    // origin_data
+    // origin_data, 待插入的数据
     always @(*) begin
-        if(state == `READ & mem_write_reg & d_rready & !d_rready_reg) begin             // READ阶段生成inserted_data
+        if(state == `READ & mem_write_reg & d_rready & !d_rready_reg) begin                     // READ阶段生成inserted_data
             origin_data = mem_rdata;
         end
-        else if(state == `IDLE & mem_write_reg & |hit) begin
+        else if(state == `IDLE & mem_write_reg & |hit) begin                                    // IDLE阶段生成inserted_data
             if(hit[1]) begin
                 origin_data = way2_rdata_reg;
             end
             else begin
                 origin_data = way1_rdata_reg;
             end
+        end
+        else if(state == `MISS & write_uncache & !DCache_miss) begin    //1240790
+            origin_data = hit[0] ? way1_rdata_reg : way2_rdata_reg;
+        end
+        else begin
+            origin_data = 0;
         end
     end
 
@@ -594,8 +590,8 @@ module DCache
     // 读命中时，无需更改
     // 读未命中时，只需将从仲裁器读到的数据写入
     always @(*) begin
-        if(state == `WAIT) begin
-            if(mem_read_reg) begin
+        if(state == `WAIT & (way1_we | way2_we)) begin  // 滤掉串口读、写穿透未命中情形
+            if(mem_read_reg) begin                      // READ -> REFILL -> WAIT 
                 write_data = d_mem_rdata;
             end
             else begin                      
@@ -608,7 +604,7 @@ module DCache
             end
         end
         else if(state == `IDLE) begin
-            if(mem_write_reg & write_uncache & |hit) begin
+            if(mem_write_reg & !write_uncache & |hit) begin // cache 写命中
                 write_data = inserted_data;
             end
         end
@@ -656,17 +652,37 @@ module DCache
             way2_rdata_reg <= 0;
         end
         else begin
-            if(state == `REFILL) begin
-                if(last_used_way[index]) begin
-                    way1_rdata_reg <= write_data;
+            if(state == `REFILL) begin                  // 有可能是cache的miss到达的地方，也有可能是写穿透命中到达的地方
+                if(write_uncache) begin
+                    if(hit[0]) begin    
+                        way1_rdata_reg <= d_wdata;
+                    end
+                    else begin
+                        way2_rdata_reg <= d_wdata;
+                    end
                 end
                 else begin
-                    way2_rdata_reg <= write_data;
+                    if(last_used_way[index]) begin
+                        way1_rdata_reg <= d_wdata;
+                    end
+                    else begin
+                        way2_rdata_reg <= d_wdata;
+                    end
                 end
             end
-            else if(pipeline_enable) begin
-                if(state == `IDLE & mem_write_reg & !write_uncache & |hit) begin
-                    if(DCache_addr_reg0[31:Offset_len] == DCache_addr_reg) begin
+            else if(state == `WAIT) begin
+                if(DCache_addr_reg0[31:Offset_len] != DCache_addr_reg[31:Offset_len]) begin            // 如果下周期地址和本周期地址不是属于同一块内容才需要更新
+                    way1_rdata_reg <= way1_rdata_restore;
+                    way2_rdata_reg <= way2_rdata_restore;                               // 由于流水线的停顿，reg0阶段的数据不再是wayi_rdata，已经存储至wayi_rdata_restore处
+                end    
+            end
+            else if(state == `IDLE & pipeline_enable) begin                             // IDLE阶段有可能cache写命中 之前没加enable导致错误了
+                if(DCache_addr_reg0[31:Offset_len] != DCache_addr_reg[31:Offset_len]) begin            // 如果不相关，则直接读取wayi_rdata
+                    way1_rdata_reg <= way1_rdata;
+                    way2_rdata_reg <= way2_rdata;
+                end
+                else begin                                                              // 如果是同一块的东西，且写命中，更新至最新数据
+                    if(mem_write_reg & !write_uncache & !seriel_buffer_write) begin
                         if(hit[0]) begin
                             way1_rdata_reg <= write_data;
                         end
@@ -674,10 +690,6 @@ module DCache
                             way2_rdata_reg <= write_data;
                         end
                     end
-                end
-                else begin                          // WAIT 3441110 reg的内容更新错误，更成没有写入之前的数据
-                    way1_rdata_reg <= way1_we ? d_wdata : way1_rdata;
-                    way2_rdata_reg <= way2_we ? d_wdata : way2_rdata;
                 end
             end
         end
@@ -721,7 +733,7 @@ module DCache
 
     always @(posedge clk) begin
         if(pipeline_enable) begin
-            DCache_wdata_reg0 <= state == `WAIT ? DCache_wdata_restore : DCache_wdata;  //4200662 从stop状态下恢复时reg0无法更新正确(更新到一个周期之后stop的地址的写数据)
+            DCache_wdata_reg0 <= state == `WAIT ? DCache_wdata_restore : DCache_wdata;  
         end
     end
 
@@ -737,7 +749,7 @@ module DCache
             tag2_reg <= 0;
         end
         else begin
-            if(state == `REFILL & DCache_miss) begin        
+            if(state == `REFILL & DCache_miss) begin            // 写穿透命中写回不需要更改对应的tagi_reg, 而普通的读写写回都是未命中，需要写回
                 if(last_used_way[index_reg]) begin
                     tag1_reg <= tag_reg;
                 end
@@ -745,24 +757,17 @@ module DCache
                     tag2_reg <= tag_reg;
                 end
             end
-            else if(pipeline_enable) begin
-                if(state == `WAIT) begin
-                    if(tag1_we & DCache_addr_reg0[11:Offset_len] == index_reg) begin
-                        tag1_reg <= tag_reg;
-                    end
-                    else if(tag2_we & DCache_addr_reg0[11:Offset_len] == index_reg) begin
-                        tag2_reg <= tag_reg;
-                    end
-                    else begin
-                        tag1_reg <= tag1_restore;       
-                        tag2_reg <= tag2_restore;
-                    end 
+            else if(state == `WAIT) begin                       // 下周期变为本周期的reg0流水
+                if(DCache_addr_reg0[11:Offset_len] != index_reg) begin      // 不相同才需要变
+                    tag1_reg <= tag1_restore;
+                    tag2_reg <= tag2_restore;
                 end
-                else begin
+            end
+            else if(state == `IDLE & pipeline_enable) begin     // tag的错误更新 7004390
+                if(DCache_addr_reg0[11:Offset_len] != index_reg) begin      // 不相同才需要变
                     tag1_reg <= tag1;
                     tag2_reg <= tag2;
                 end
-                
             end
         end
     end
@@ -773,26 +778,13 @@ module DCache
             d_raddr <= 0;
         end
         else begin
-            if(state == `MISS) begin
-                if(read_uncache | (seriel_buffer_write)) begin
+            if(state == `MISS) begin    
+                if(seriel_read) begin
                     d_raddr <= DCache_addr_reg;
                 end
-                else if(!dirty) begin
+                else if(!dirty & !seriel_read & !seriel_buffer_write & !write_uncache) begin // 普通读写未命中，且脏位为0，直接读                    
                     d_raddr <= DCache_addr_reg & 32'hffffffc0;
                 end
-            end
-            else if(state == `WRITE & d_wready & !d_wready_reg) begin
-                if(write_uncache & !write_uncache_have_read) begin
-                    if(DCache_addr_reg == `SERIEL_BUFFER_ADDR | DCache_addr_reg == `SERIEL_STATUS_ADDR) begin
-                        d_raddr <= DCache_addr_reg;
-                    end
-                    else begin
-                        d_raddr <= DCache_addr_reg & 32'hffffffc0;
-                    end
-                end
-                else if((mem_write_reg & !write_uncache) |
-                        (mem_read_reg  & !read_uncache ))
-                    d_raddr <= DCache_addr_reg & 32'hffffffc0;
             end
         end
     end
@@ -831,57 +823,20 @@ module DCache
         end
     end
 
-    // write_uncache_have_read
-    // 功能：用于WRITE状态转向READ(当uncache_write未读时)和转向REFILL(当uncache_write读完时)
-    always @(posedge clk) begin
-        if(!rstn) begin
-            write_uncache_have_read <= 0;
-        end
-        else begin
-            if(state == `MISS & !dirty & write_uncache) begin   
-                // 如果uncache的写判断不为脏，则待会儿插入完数据可直接写回缓存
-                write_uncache_have_read <= 1;   
-            end
-            else if(state == `WRITE & write_uncache & !write_uncache_have_read & d_wready & !d_wready_reg) begin
-                // 如果是uncache的写判断为脏，先进入WRITE把脏数据写回，然后再将插入完的数据写回
-                write_uncache_have_read <= 1;
-            end
-            else if(state == `WRITE & write_uncache_have_read & d_wready & !d_wready_reg) begin    
-                // 如果已经从仲裁器读出过，则将标志清零，并转到写回阶段
-                write_uncache_have_read <= 0;
-            end
-            else if(state == `IDLE & write_uncache & !DCache_miss) begin
-                write_uncache_have_read <= 1;
-            end
-            else if(state == `MISS & seriel_buffer_write) begin
-                write_uncache_have_read <= 1;
-            end
-        end 
-    end
-
     always @(posedge clk) begin
         if(state == `READ & mem_write_reg & !write_uncache & d_rready & !d_rready_reg) begin
             inserted_data_reg <= inserted_data;
         end
     end
     
-    always @(posedge clk) begin
-        if(!rstn) begin
-            DCache_wdata_restore <= 0;
-        end
-        else begin
-            if(state == `IDLE & !pipeline_enable) begin
-                DCache_wdata_restore <= DCache_wdata;
-            end
-        end
-    end
-
+    // 停顿时对本周期输出的新数据进行保存
     always @(posedge clk) begin
         if(!rstn) begin
             tag1_restore <= 0;
             tag2_restore <= 0;
             way1_rdata_restore <= 0;
             way2_rdata_restore <= 0;
+            DCache_wdata_restore <= 0;
         end
         else begin  // 因为tag的出来在停顿的第一个周期，需要等一个周期  
             if(state == `IDLE & !pipeline_enable) begin //22114359
@@ -889,7 +844,48 @@ module DCache
                 tag2_restore <= tag2;
                 way1_rdata_restore <= way1_rdata;
                 way2_rdata_restore <= way2_rdata;
+                DCache_wdata_restore <= DCache_wdata;
             end
         end
     end
+
+    always @(posedge clk) begin
+        if(!rstn) begin
+            d_write_type <= 0;
+        end
+        else begin
+            if(state == `MISS & ((write_uncache & DCache_miss) | seriel_buffer_write)) begin  //写穿透未命中或串口数据写，则只写一个字
+                d_write_type <= 1;
+            end
+            else if(state == `READ & seriel_buffer_write) begin
+                d_write_type <= 1;
+            end
+            else if(state == `WRITE & d_wready & !d_wready_reg) begin
+                d_write_type <= 0;
+            end
+        end
+    end
+
+    always @(posedge clk) begin
+        if(!rstn) begin
+            d_waddr <= 0;
+        end
+        else begin
+            if(state == `MISS & DCache_miss) begin
+                if(write_uncache | seriel_buffer_write) begin
+                    d_waddr <= DCache_addr_reg;
+                end
+                else if(dirty) begin
+                    d_waddr <= {{last_used_way[index_reg] ? tag1_reg : tag2_reg}, {index_reg}, {(Offset_len){1'b0}}}; // 写回脏数据的地址
+                end
+            end
+            else if(state == `MISS & !DCache_miss & write_uncache) begin    // 写穿透命中
+                d_waddr <= DCache_addr_reg & 32'hffffffc0;
+            end
+            else if(state == `READ & seriel_buffer_write) begin
+                d_waddr <= DCache_addr_reg;
+            end
+        end
+    end
+
 endmodule

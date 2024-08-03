@@ -261,8 +261,8 @@ module CPU_top
     reg         branch_enable_reg;
 
     wire        task_full;
-    wire        fix_flag;
-
+    wire        d_write_type;
+    
     assign task_full = task_count == (1 << Queue_count_len) - 1;
     assign ICache_addr = branch_enable ? pc_jump : pc;
     assign rf_src1 = rj;
@@ -552,6 +552,7 @@ module CPU_top
       .d_raddr(d_raddr),
       .DCache_rdata(DCache_rdata),
       .DCache_miss_stop(DCache_miss),
+      .d_write_type(d_write_type),
       .d_wdata(d_wdata)
     );
 
@@ -598,6 +599,7 @@ module CPU_top
       .d_raddr(d_raddr),
       .d_waddr(d_waddr),
       .d_wdata(d_wdata),
+      .d_write_type(d_write_type),
       .mem_rdata(mem_rdata),
       .d_rready(d_rready),
       .d_wready(d_wready),
@@ -1001,7 +1003,7 @@ module CPU_top
       end
       else begin
         if(!DCache_miss) begin  //执行跳转指令后，跳转指令和两个阶段的空指令往下流，毕竟跳转指令还是有写入寄存器堆的情况(如bl指令)
-          control_bus_EX_MEM <= load_use_stop | mul_stop ? nop_inst : control_bus_ID_EX;
+          control_bus_EX_MEM <= load_use_stop ? nop_inst : control_bus_ID_EX;
         end
       end
     end
@@ -1012,7 +1014,7 @@ module CPU_top
       end
       else begin
         if(!DCache_miss) begin
-          alu_res_EX_MEM <= load_use_stop | mul_stop ? 0 : alu_res ;
+          alu_res_EX_MEM <= load_use_stop ? 0 : alu_res ;
         end
       end
     end
@@ -1023,7 +1025,7 @@ module CPU_top
       end
       else begin
         if(!DCache_miss) begin
-          mem_read_EX_MEM <= load_use_stop | mul_stop ? 0 : mem_read_ID_EX;
+          mem_read_EX_MEM <= load_use_stop ? 0 : mem_read_ID_EX;
         end
       end
     end
@@ -1034,7 +1036,7 @@ module CPU_top
       end
       else begin
         if(!DCache_miss) begin
-          rf_we_EX_MEM <= load_use_stop | mul_stop ? 0 : rf_we_ID_EX;
+          rf_we_EX_MEM <= load_use_stop ? 0 : rf_we_ID_EX;
         end
       end
     end
@@ -1067,7 +1069,7 @@ module CPU_top
       end
       else begin
         if(!DCache_miss) begin
-          mem_write_EX_MEM <= load_use_stop | mul_stop ? 0 : mem_write_ID_EX;
+          mem_write_EX_MEM <= load_use_stop ? 0 : mem_write_ID_EX;
         end
       end
     end
@@ -1189,7 +1191,7 @@ module CPU_top
       end
     end
 
-    always @(posedge clk) begin //下降沿不该更新
+    always @(posedge clk) begin 
       integer i;
       if(!rstn | (branch_enable & !load_use_stop)) begin
         for(i = 0; i < (1 << Queue_count_len); i++) begin
@@ -1358,6 +1360,8 @@ module CPU_top
   end
 
   always @(posedge clk) begin
-    control_bus_ID_EX_reg <= control_bus_ID_EX;
+    if(!load_use_stop) begin
+      control_bus_ID_EX_reg <= control_bus_ID_EX;
+    end
   end
   endmodule

@@ -5,7 +5,7 @@ _start:
 UTEST_STREAM:
     li.w        $a0,0x80100000
     li.w        $a1,0x80400000
-    li.w        $a2,0x00300000
+    li.w        $a2,0x00000300
     add.w       $a2,$a0,$a2
 stream_next:
     ld.w        $t0,$a0,0x0
